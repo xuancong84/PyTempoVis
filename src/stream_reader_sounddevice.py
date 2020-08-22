@@ -1,9 +1,6 @@
 import numpy as np
-import time, sys, math
-from collections import deque
+import time, sys, math, threading, code
 import sounddevice as sd
-
-from src.utils import *
 
 
 class Stream_Reader:
@@ -24,9 +21,12 @@ class Stream_Reader:
 	             updates_per_second = 1000,
 	             n_channels = 1,
 	             sample_type = np.float32,
+	             buffer_seconds=1.0,
 	             verbose = False):
 
 		self.verbose = verbose
+		self.lock = threading.Lock()
+		self.sample_type = sample_type
 		self.device_dict = sd.query_devices()
 
 		try:
@@ -42,22 +42,9 @@ class Stream_Reader:
 		if device is not None:
 			sd.default.device = device
 
-		self.data_buffer = None
+		self.wav_data = None
 
-		# This part is a bit hacky, need better solution for this:
-		# Determine what the optimal buffer shape is by streaming some test audio
-		self.optimal_data_lengths = [updates_per_second]
-		with sd.InputStream(samplerate=self.rate,
-		                    blocksize=0,
-		                    device=self.device,
-		                    channels=n_channels,
-		                    dtype=sample_type,
-		                    latency='low',
-		                    callback=self.test_stream_read):
-			time.sleep(0.2)
-
-		self.update_window_n_frames = max(self.optimal_data_lengths)
-		del self.optimal_data_lengths
+		self.update_window_n_frames = int((self.rate / updates_per_second + 1)//2*2)
 
 		self.stream = sd.InputStream(
 			samplerate=self.rate,
@@ -73,50 +60,35 @@ class Stream_Reader:
 		self.device = self.stream.device
 
 		self.updates_per_second = self.rate / self.update_window_n_frames
+		self.buffer_size = int(self.rate * buffer_seconds + 0.5)
 		self.info = ''
 		self.new_data = False
-
-		if self.verbose:
-			self.data_capture_delays = deque(maxlen=32)
-			self.num_data_captures = 0
 
 		self.device_latency = self.device_dict[self.device]['default_low_input_latency']
 		self.infos = {'overview': str(sd.query_devices()).splitlines(), 'device_list': list(sd.query_devices())}
 
+	def __del__(self):
+		self.stream.close(True)
 
-	def non_blocking_stream_read(self, indata, frames, time_info, status):
-		start = time.time()
-		self.status = status
+	def non_blocking_stream_read(self, indata, frame_count, time_info, status):
+		# print(indata.shape, frame_count, time_info)
+		# code.interact(local=dict(globals(), **locals()) )
+		self.lock.acquire()
+		try:
+			self.wav_data[:, :-frame_count] = self.wav_data[:, frame_count:]
+			self.wav_data[:, -frame_count:] = indata.T
+			self.wav_time = time_info.inputBufferAdcTime + frame_count / self.rate
+			if self.stream_start_time is None:
+				self.stream_start_time = time_info.inputBufferAdcTime
+		finally:
+			self.lock.release()
 
-		if self.data_buffer is not None:
-			self.data_buffer.append_data(indata[:, 0])
-			self.new_data = True
-
-		if self.verbose:
-			self.num_data_captures += 1
-			self.data_capture_delays.append(time.time() - start)
-
-		return
-
-	def test_stream_read(self, indata, frames, time_info, status):
-		'''
-		Dummy function to determine what blocksize the stream is using
-		'''
-		self.optimal_data_lengths.append(len(indata[:, 0]))
-		return
-
-	def stream_start(self, data_windows_to_buffer=None):
-		self.data_windows_to_buffer = data_windows_to_buffer
-
-		if data_windows_to_buffer is None:
-			self.data_windows_to_buffer = int(self.updates_per_second / 2)  # By default, buffer 0.5 second of audio
-		else:
-			self.data_windows_to_buffer = data_windows_to_buffer
-
-		self.data_buffer = numpy_data_buffer(self.data_windows_to_buffer, self.update_window_n_frames)
+	def stream_start(self):
+		self.wav_data = np.zeros([self.stream._channels, self.buffer_size], dtype=self.sample_type)
+		self.wav_time = None
 
 		self.stream.start()
-		self.stream_start_time = time.time()
+		self.stream_start_time = None
 
-	def terminate(self):
+	def stream_stop(self):
 		self.stream.stop()

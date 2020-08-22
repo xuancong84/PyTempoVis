@@ -1,3 +1,8 @@
+#include "TempoVis.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 const float delta_mul = 3.0f/(delta_width*(delta_width+1)*(2*delta_width+1));
 
@@ -234,7 +239,7 @@ float	ComputeTempo( float *data, int size, int sr ){	//sr: sampling rate
 		normCorr(autoCorr( TempoCorr[N], &AllBuf[x*nframe], TempoMaxShift, nframe ),TempoMaxShift);
 		addCorr( TempoSpec, TempoCorr[N], TempoMaxShift, est_fact[N]=fact*calcSpecWeightByMaxPeakHeight(TempoCorr[N],TempoMaxShift) );
 		N++;
-		assert(N<=nTotalBufs);
+//		assert(N<=nTotalBufs);
 
 		if( !x ) continue;	// don't do delta and delta-delta for amplitude
 
@@ -244,7 +249,7 @@ float	ComputeTempo( float *data, int size, int sr ){	//sr: sampling rate
 		normCorr(autoCorr( TempoCorr[N], &AllBuf[x*nframe], TempoMaxShift, nframe ),TempoMaxShift);
 		addCorr( TempoSpec, TempoCorr[N], TempoMaxShift, est_fact[N]=fact*calcSpecWeightByMaxPeakHeight(TempoCorr[N],TempoMaxShift) );
 		N++;
-		assert(N<=nTotalBufs);
+//		assert(N<=nTotalBufs);
 
 		// add delta-delta spectrum
 		deltaSpec( &AllBuf[x*nframe], DifBuf, nframe );
@@ -252,7 +257,7 @@ float	ComputeTempo( float *data, int size, int sr ){	//sr: sampling rate
 		normCorr(autoCorr( TempoCorr[N], &AllBuf[x*nframe], TempoMaxShift, nframe ),TempoMaxShift);
 		addCorr( TempoSpec, TempoCorr[N], TempoMaxShift, est_fact[N]=fact*calcSpecWeightByMaxPeakHeight(TempoCorr[N],TempoMaxShift) );
 		N++;
-		assert(N<=nTotalBufs);
+//		assert(N<=nTotalBufs);
 	}
 
 	getPeakSpectrum( TempoSpecP, TempoSpec, TempoMaxShift );
@@ -289,7 +294,7 @@ float	ComputeTempo( float *data, int size, int sr ){	//sr: sampling rate
 	memset( TempoSpec, 0, sizeof(FLOAT)*TempoMaxShift );
 	for( int x=0; x<nTotalBufs; x++ ){
 		int posi = findPeakPosi( TempoCorr[x], TempoMaxShift, itempo );
-		register FLOAT f = (FLOAT)((posi-itempo)/(itempo*TempoPeakSharp));
+		FLOAT f = (FLOAT)((posi-itempo)/(itempo*TempoPeakSharp));
 		addCorr( TempoSpec, TempoCorr[x], TempoMaxShift, est_fact2[x]=est_fact[x]*exp(-4*f*f) );
 	}
 

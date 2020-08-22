@@ -1,4 +1,12 @@
 // Extra math constants
+#include <stdint.h>
+
+#define QWORD	uint64_t
+#define DWORD	uint32_t
+#define WORD	uint16_t
+#define BYTE	uint8_t
+
+//#define	M_PI				3.1415926535897932384626
 #define	M_2PI				6.283185307179586476925286766559
 #define	M_LOG_2				0.69314718055994530941723212145818
 
@@ -47,6 +55,7 @@
 #define	RMSMIN				16
 #define	SPACEPOINTS			65536								// number of stars in the space
 #define	SPACERADIUS			64									// radius of the space globe
+#define	SPRITE_TEX_SIZE		64									// size of the sprite tex image
 #define	VIEWDISTANCE		(SPACERADIUS*0.8f)					// radius of the space globe
 #define	BELTCIRCUMSIZE		12									// no. of line segments on circumference
 #define	BELTDEPTHSIZE		64									// no. of layers to store
@@ -79,28 +88,11 @@
 #define	POWERHALFLIFE		4									// in seconds
 #define	FFTEXPFACTOR		0.03125f
 
-const int	BELT_INC  = (int)((FLOAT)TempoPrecision/BELT_FPS+0.5);
-const FLOAT BELT_OFF  = (FLOAT)M_PI/BELTCIRCUMSIZE;
-
-int total_added = 0;
-
-GLfloat	space_attn[3]	= { 0.0f, 0.2f, 0 };
-float	zero_vector[4]	= { 0, 0, 0, 1 };
-float	ones_vector[4]	= { 1, 1, 1, 1 };
-float	zero_4vector[4]	= { 0, 0, 0, 0 };
-
 // Lighting and material parameters
 #define	attn_const_0		1.0f								// attenuation, constant term
 #define	attn_const_1		1.5f								// attenuation, linear term
 #define	attn_const_2		6.0f								// attenuation, quadratic term
-#define	shiny_const			20.0f								// attenuation, quadratic term
-FLOAT	l_ambient[4]={0.4f,0.4f,0.4f,1.0f};
-FLOAT	l_diffuse[4]={0.2f,0.2f,0.2f,1.0f};
-FLOAT	l_specular[4]={1.5f,1.5f,1.5f,1.0f};
-FLOAT	m_ambient[4]={0.4f,0.4f,0.4f,1.0f};
-FLOAT	m_diffuse[4]={0.2f,0.2f,0.2f,1.0f};
-FLOAT	m_specular[4]={1.0f,1.0f,1.0f,1.0f};
-FLOAT	m_emissive[4]={0.01f,0.01f,0.01f,1.0f};
+#define	shiny_const			20.0f								// attenuation, quadratic termconst int	BELT_INC  = (int)((FLOAT)TempoPrecision/BELT_FPS+0.5);
 
 // For offline estimation
 #define	window_size		0.04f			// in seconds
@@ -108,5 +100,3 @@ FLOAT	m_emissive[4]={0.01f,0.01f,0.01f,1.0f};
 #define	delta_width		6
 #define	nFilterBands	8
 
-const int	nTotalParams = nFilterBands+2;
-const int	nTotalBufs	 = 4+nFilterBands*3;

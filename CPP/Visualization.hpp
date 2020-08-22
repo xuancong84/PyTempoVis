@@ -1,5 +1,102 @@
+#include <iostream>
+#include <cstdlib>
+#include <stdio.h>
+#include <math.h>
 
-inline FLOAT *VectorCopy( FLOAT *vDst, FLOAT *vSrc ){
+#include "TempoVis.h"
+
+#define max(a,b) ((a>b)?(a):(b))
+#define min(a,b) ((a<b)?(a):(b))
+
+
+void get_viewport_size(int *Width, int *Height){
+	// Get viewport width and height
+	GLint m_viewport[4];
+	glGetIntegerv( GL_VIEWPORT, &m_viewport[0] );
+	*Width = m_viewport[2];
+	*Height = m_viewport[3];
+}
+
+int glXYPrintf(int X, int Y, WORD align, void *font, char* fmt, ...){
+/*Note: 'align' specifies where should the raster point be positioned in the 3D text box
+  Its 2 lower order bytes specifies alignment along X,Y axis, i.e. align = 0xXXYY
+  XX,YY	=	0   extreme left/bottom
+			1   middle/center
+    		2   extreme right/top
+  By default, 'align=0' means the raster point is at the upper left corner of the text box.
+*/
+	//Convert to text
+	int 	ret;
+	char    text[256];
+	if(!fmt) return 0;
+	va_list	ap;
+	va_start(ap, fmt);
+	ret = vsnprintf(text, 256, fmt, ap);
+	va_end(ap);
+
+	// compute alignment
+	int size_cx = 0, size_cy = 0;
+	if(align){
+		size_cx = glutBitmapLength(font, (const unsigned char *)&text[0]);
+		size_cy = 15;
+		switch(align&0x3){
+			case 0: size_cy	=	0;break;
+			case 1: size_cy >>= 1;break;
+		}
+		align >>= 8;
+ 		switch(align&0x3){
+			case 0: size_cx	=	0;break;
+			case 1: size_cx >>= 1;break;
+		}
+	}
+
+	// Get width and height
+	int Width, Height;
+	get_viewport_size(&Width, &Height);
+
+	//1+	Preserve matrix mode and display list base
+	glPushAttrib(GL_TRANSFORM_BIT | GL_LIST_BIT);
+	//2+	Reset view matrix
+	glMatrixMode(GL_MODELVIEW);
+#ifndef	__DRAWFAST
+	glPushMatrix();
+#endif
+ 	glLoadIdentity();
+	//3+	Set projection matrix
+	glMatrixMode(GL_PROJECTION);
+#ifndef	__DRAWFAST
+	glPushMatrix();
+#endif
+	glLoadIdentity();
+	glOrtho(0, Width, Height-1, 0, -1, 1);
+	//0		Draw text
+	glRasterPos2i(X-size_cx, Y-size_cy);
+	for(int x=0, X=strlen(text); x<X; ++x)
+		glutBitmapCharacter(font, text[x]);
+	//3-	Restore projection matrix
+#ifndef	__DRAWFAST
+	glPopMatrix();
+	//2-	Restore view matrix
+	glMatrixMode(GL_MODELVIEW);
+	glPopMatrix();
+#endif
+	//1-	Restore view matrix selection and display list base
+	glPopAttrib();
+
+	return ret;
+}//print current font at specified position (X,Y)
+
+
+int glXYPrintf(int X, int Y, WORD align, char* fmt, ...){
+	int ret;
+	va_list	ap;
+	va_start(ap, fmt);
+	ret = glXYPrintf(X, Y, align, GLUT_BITMAP_9_BY_15, fmt, ap);
+	va_end(ap);
+	return ret;
+}
+
+FLOAT *VectorCopy( FLOAT *vDst, FLOAT *vSrc ){
 	memcpy( vDst, vSrc, sizeof(FLOAT)*3 );
 	return	vDst;
 }
@@ -19,16 +116,15 @@ void	expUpdate( FLOAT *data, FLOAT *newdata, int size, FLOAT prev_time, FLOAT cu
 	if( !curr_time ){
 		memcpy( data, newdata, sizeof(FLOAT)*size );
 	}else{
-		FLOAT	f1 = (FLOAT)exp(M_LOG_2*(prev_time-curr_time)/half_life);
-		FLOAT	f2 = (FLOAT)exp(-M_LOG_2*curr_time/half_life);
-		FLOAT	w1=f1-f2, w2=1-f1, w3=1.0f/(w1+w2);
+		FLOAT	f1 = exp(M_LOG_2*(prev_time-curr_time)/half_life);
+		FLOAT	f2 = 1.0f-f1;
 		for(int x=0; x<size; x++){
-			data[x] = (data[x]*w1 + newdata[x]*w2)*w3;
+			data[x] = (data[x]*f1 + newdata[x]*f2);
 		}// weighted sum
 	}
 }// Update data array using negative exponential decay law
 
-inline void	RandomBoundVector( FLOAT *vec ){
+void	RandomBoundVector( FLOAT *vec ){
 	do{
 		vec[0] = (FLOAT)rand()/RAND_MAX-0.5f;
 		vec[1] = (FLOAT)rand()/RAND_MAX-0.5f;
@@ -37,7 +133,7 @@ inline void	RandomBoundVector( FLOAT *vec ){
 	}while( VectorLength(vec) > 1.0f );
 }// random a unit cube bounded vector {x:[-1,1];y:[-1,1];z:[-1,1]}
 
-inline void	RandomDirnVector( FLOAT *vec ){
+void	RandomDirnVector( FLOAT *vec ){
 	do{
 		vec[0] = (FLOAT)rand()/RAND_MAX-0.5f;
 		vec[1] = (FLOAT)rand()/RAND_MAX-0.5f;
@@ -46,13 +142,13 @@ inline void	RandomDirnVector( FLOAT *vec ){
 	VectorNorm( vec );
 }// random a unit length direction vector
 
-inline DWORD RandomColorNorm(){
+DWORD RandomColorNorm(){
 	FLOAT	colors[3]={(FLOAT)rand()/RAND_MAX,(FLOAT)rand()/RAND_MAX,(FLOAT)rand()/RAND_MAX};
 	VectorNorm( colors );
 	return	(((DWORD)(colors[0]*255+0.5f))<<16) | (((DWORD)(colors[1]*255+0.5f))<<8) | ((DWORD)(colors[2]*255+0.5f));
 }// generate a random color with unit intensity
 
-inline DWORD RandomColor( int intense=0 ){
+DWORD RandomColor( int intense=0 ){
 	FLOAT	mul = 255.0f/RAND_MAX;
 	DWORD	color;
 re:
@@ -69,8 +165,8 @@ re:
 	return	color;
 }// generate a random color*/
 
-inline DWORD InterColor( DWORD c1, DWORD c2, float s_factor ){
-	register BYTE *colors = (BYTE*)&c1;
+DWORD InterColor( DWORD c1, DWORD c2, float s_factor ){
+	BYTE *colors = (BYTE*)&c1;
 	FLOAT	cs1[4] = {colors[0], colors[1], colors[2], colors[3]};
 	colors = (BYTE*)&c2;
 	FLOAT	cs2[4] = {colors[0], colors[1], colors[2], colors[3]};
@@ -79,48 +175,48 @@ inline DWORD InterColor( DWORD c1, DWORD c2, float s_factor ){
 	return	(((DWORD)cs1[3])<<24) | (((DWORD)cs1[2])<<16) | (((DWORD)cs1[1])<<8) | ((DWORD)cs1[0]);
 }// Interpolate color, including alpha
 
-inline FLOAT PhaseDiff( FLOAT f1, FLOAT f2 ){
-	register FLOAT df = abs(f1-f2);
+FLOAT PhaseDiff( FLOAT f1, FLOAT f2 ){
+	FLOAT df = abs(f1-f2);
 	return	min( df, (FLOAT)M_2PI-df );
 }// absolute phase difference
 
-inline int PhaseDiff( int v1, int v2, int period ){
-	register int phaseDiff = v2-v1;
+int PhaseDiff( int v1, int v2, int period ){
+	int phaseDiff = v2-v1;
 	if( phaseDiff>0 ) return phaseDiff>(period>>1) ? period-phaseDiff : phaseDiff;
 	else return (-phaseDiff)>(period>>1) ? period+phaseDiff : phaseDiff;
 	
 }// return discrete phase difference
 
-inline FLOAT getMin( FLOAT *data, int size ){
-	register FLOAT minV = *data;
-	register FLOAT *pData= data, *pEnd=&data[size];
+FLOAT getMin( FLOAT *data, int size ){
+	FLOAT minV = *data;
+	FLOAT *pData= data, *pEnd=&data[size];
 	for( ; pData<pEnd; pData++ ){
 		if( *pData<minV ) minV = *pData;
 	}
 	return	minV;
 }// Obtain minimum point
 
-inline FLOAT getMax( FLOAT *data, int size ){
-	register FLOAT maxV = *data;
-	register FLOAT *pData= data, *pEnd=&data[size];
+FLOAT getMax( FLOAT *data, int size ){
+	FLOAT maxV = *data;
+	FLOAT *pData= data, *pEnd=&data[size];
 	for( ; pData<pEnd; pData++ ){
 		if( *pData>maxV ) maxV = *pData;
 	}
 	return	maxV;
 }// Obtain maximum value
 
-inline FLOAT findMinNon0( FLOAT *data, int size ){
-	register FLOAT	minV = FLT_MAX;
+FLOAT findMinNon0( FLOAT *data, int size ){
+	FLOAT	minV = FLT_MAX;
 	for( int x=0; x<size; x++ ){
-		register FLOAT fval = data[x];
+		FLOAT fval = data[x];
 		if( fval ) if( fval<minV ) minV = fval;
 	}
 	return	(minV==FLT_MAX)?0:minV;
 }// Obtain minimum non-zero point
 
-inline FLOAT findPeakHeight( FLOAT *data, int size, int posi ){
-	register FLOAT	hLeft, hRight;
-	register int	x;
+FLOAT findPeakHeight( FLOAT *data, int size, int posi ){
+	FLOAT	hLeft, hRight;
+	int	x;
 	for( x=posi; x>=0 && data[x-1]<data[x]; x-- );
 	if( (hLeft=data[posi]-data[x]) <= FLT_MIN ) return 0;
 	for( x=posi; x<size && data[x+1]<data[x]; x++ );
@@ -128,9 +224,9 @@ inline FLOAT findPeakHeight( FLOAT *data, int size, int posi ){
 	return	1/(1/hLeft+1/hRight);
 }// Obtain the height and width of a peak
 
-inline int findPeakPosi( FLOAT *data, int size, int posi ){
+int findPeakPosi( FLOAT *data, int size, int posi ){
 	int iLeft, iRight;
-	register int x;
+	int x;
 	for( x=posi; x>=0 && data[x-1]>data[x]; x-- );
 	iLeft = (x==posi?0:x);
 	for( x=posi; x<size && data[x+1]>data[x]; x++ );
@@ -139,15 +235,15 @@ inline int findPeakPosi( FLOAT *data, int size, int posi ){
 	return	((posi-iLeft) < (iRight-posi))?iLeft:iRight;
 }// Obtain the position of closest peak
 
-inline FLOAT calcPeakHeight( FLOAT *data, int size, FLOAT posi ){
+FLOAT calcPeakHeight( FLOAT *data, int size, FLOAT posi ){
 	int x = findPeakPosi( data, size, (int)(posi+0.5f) );
-	register FLOAT y = (FLOAT)((posi-x)/(posi*TempoPeakSharp));
+	FLOAT y = (FLOAT)((posi-x)/(posi*TempoPeakSharp));
 	return	findPeakHeight( data, size, x )*exp(-y*y);
 }// Obtain normalized peak height value
 
-inline int findMax( FLOAT *data, int size ){
+int findMax( FLOAT *data, int size ){
 	int	posi = 0;
-	register FLOAT	minV = -FLT_MAX;
+	FLOAT	minV = -FLT_MAX;
 	for( int x=0; x<size; x++ ){
 		if( data[x]>minV ){
 			minV = data[x];
@@ -157,14 +253,14 @@ inline int findMax( FLOAT *data, int size ){
 	return	posi;
 }// Obtain maximum point
 
-inline void normCorr( FLOAT *data, int size ){
-	register FLOAT	maxV = -FLT_MAX;
-	register FLOAT	minV = findMinNon0( data, size );
+void normCorr( FLOAT *data, int size ){
+	FLOAT	maxV = -FLT_MAX;
+	FLOAT	minV = findMinNon0( data, size );
 
 	if( data[0]==minV ) return;
-	register FLOAT	scale= (FLOAT)1.0/(data[0]-minV);
+	FLOAT	scale= (FLOAT)1.0/(data[0]-minV);
 	for( int x=1; x<size; x++ ){
-		register FLOAT fval = (data[x]-minV)*scale;//*ExpWindowFunc[x];
+		FLOAT fval = (data[x]-minV)*scale;//*ExpWindowFunc[x];
 		data[x]	= fval<0?0:fval;
 		if( fval>maxV ) if( data[x]>data[x-1] ) maxV = fval;
 	}
@@ -173,38 +269,39 @@ inline void normCorr( FLOAT *data, int size ){
 	//*data = 1;
 }// Normalize autocorrelation
 
-inline void addCorr( FLOAT *dst, FLOAT *src, int size, FLOAT factor=1 ){
-	if(factor>1) __asm int 3
+void addCorr( FLOAT *dst, FLOAT *src, int size, FLOAT factor=1 ){
+//	if(factor>1) __asm int 3
 	//if( !CheckFloat( &factor ) ) return;
 	if( factor==1 )
 		for( int x=0; x<size; x++ ){
-			register FLOAT val = src[x];//*corr_scale;
+			FLOAT val = src[x];//*corr_scale;
 			dst[x] += val*val;
 		}
 	else{
 		factor *= factor;
 		for( int x=0; x<size; x++ ){
-			register FLOAT val = src[x];//*corr_scale;
+			FLOAT val = src[x];//*corr_scale;
 			dst[x] += val*val*factor;
 		}
 	}
 }// Add correlation spectrum
 
-inline void getPeakSpectrum( FLOAT *dst, FLOAT *src, int size ){
+void getPeakSpectrum( FLOAT *dst, FLOAT *src, int size ){
 	memset( dst, 0, sizeof(FLOAT)*size );
-	for( register int x=1,y=size-1; x<y; x++ )
+	for( int x=1,y=size-1; x<y; x++ )
 		if( src[x]>src[x-1] && src[x]>src[x+1] ) dst[x] = src[x];
 }// Get peak spectrum, non-peak position = 0
 
-inline FLOAT calcSpecWeightByMaxPeakHeight( FLOAT *data, int size ){
+FLOAT calcSpecWeightByMaxPeakHeight( FLOAT *data, int size ){
 	FLOAT	maxPeakHeight = 0, peakVal, lowVal=*(data+1), fval;
-	register FLOAT	*pData=data+2, *pMax=&data[size];
+	FLOAT	*pData=data+2, *pMax=&data[size];
 re:
 	// reach first maxima
 	for( ; pData<pMax && *pData>=*(pData-1); pData++ );
 	peakVal = *(pData-1);
 	// reach first nonzero minima
-	for( ; pData<pMax && *pData<=*(pData-1); pData++ );
+	for( ; pData<pMax && *pData<=*(pData-1); pData++ )
+	;
 	{
 		FLOAT	hLeft = peakVal-lowVal;
 		FLOAT	hRight= peakVal-*(pData-1);
@@ -219,7 +316,7 @@ re:
 	return	(*data)>FLT_MIN ? maxPeakHeight/(*data): maxPeakHeight;
 }
 
-inline FLOAT interPeakPosi( FLOAT *middle ){
+FLOAT interPeakPosi( FLOAT *middle ){
 	FLOAT	left = *middle-*(middle-1);
 	FLOAT	right= *middle-*(middle+1);
 	FLOAT	sum = left+right;
@@ -263,17 +360,17 @@ FLOAT* resizeData(	int srcWidth,int srcHeight,FLOAT *srcData,
 	return dstData;
 }// Resize array using interpolation
 
-inline bool	isIntegerMultiple( int i1, int i2 ){
+bool	isIntegerMultiple( int i1, int i2 ){
 	if( !i1 || !i2 ) return	false;
-	if( i2 > i1 ) swap( i1, i2 );
+	if( i2 > i1 ) std::swap( i1, i2 );
 	int		quot = (int)((float)i1/i2+0.5f);
 	float	f2 = (float)i1/quot;
 	return	abs(f2-i2)/(f2+i2) < 0.0625f/sqrt((FLOAT)quot);
 }// Whether i1(i2) is an integer multiple of i2(i1)
 
-inline bool	isHarmonicMultiple( int i1, int i2 ){
+bool	isHarmonicMultiple( int i1, int i2 ){
 	if( !i1 || !i2 ) return	false;
-	if( i2 > i1 ) swap( i1, i2 );
+	if( i2 > i1 ) std::swap( i1, i2 );
 	int		quot = (int)((float)i1/i2+0.5f);
 	float	f2 = (float)i1/quot;
 	if( abs(f2-i2)/(f2+i2) > 0.0625f/sqrt((FLOAT)quot) ) return	false;
@@ -282,7 +379,7 @@ inline bool	isHarmonicMultiple( int i1, int i2 ){
 	return	quot==1;
 }// Whether i1(i2) is an harmonic integer (no factor other than 2&3) multiple of i2(i1)
 
-int	getMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous=NULL ){
+int	getMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous ){
 	FLOAT	level3, level21, level22;
 	level3	= (calcPeakHeight( spec, size, pri_tempo*0.333333f )
 			 +calcPeakHeight( spec, size, pri_tempo*0.666666f) )/2;
@@ -354,7 +451,7 @@ bool testUpper( FLOAT pri_tempo, FLOAT hi_tempo, FLOAT *TempoSpec, int size ){
 	return	false;
 }// test whether can goto upper harmonics
 
-inline int	adjustTempo( float pri_tempo, int min_tempo, int max_tempo,
+int	adjustTempo( float pri_tempo, int min_tempo, int max_tempo,
 						FLOAT *TempoSpec, FLOAT *PeakSpec,
 						FLOAT *Window2, FLOAT *Window3 ){
 	assert( pri_tempo>0 && pri_tempo<max_tempo );
@@ -421,7 +518,7 @@ void	DrawSpikeArray( FLOAT*vals, int size, float Vstart, float Vend, DWORD color
 void	DrawPointArray( FLOAT*vals, int size, float Vstart, float Vend, DWORD color=0xffffffff, bool zeroMin=false ){
 	FLOAT	fmin=*vals, fmax=*vals;
 	FLOAT	*data = new FLOAT [size*sizeof(FLOAT)*2], *pEnd=&data[size*sizeof(FLOAT)*2];
-	register FLOAT fval, *pDst=data;
+	FLOAT fval, *pDst=data;
 
 	for( int x=0; x<size; x++ ){
 		*pDst++ = (FLOAT)x;
@@ -506,8 +603,8 @@ void Realft (float* s)
    float yr, yi, yr2, yi2, yr0, theta, x;
 
    n=*(int*)s / 2; n2 = n/2;
-   theta = PI / n;
-   FFT(s, FALSE);
+   theta = M_PI / n;
+   FFT(s, 0);
    x = sin(0.5 * theta);
    yr2 = -2.0 * x * x;
    yi2 = sin(theta); yr = 1.0 + yr2; yi = yi2;
@@ -531,202 +628,183 @@ void Realft (float* s)
 }
 //#pragma warning( enable:4244 )
 
-class	LoopBuffer{
-	// All variables set to public for performance
-public:
-	int		N_total_frames;
-	int		N_draw_frames;
-	int		frame_size;
-	int		current_frame;		// inclusive
-	int		draw_size;
-	int		data_size;
-	int		status;				// 0:playing or stopped, 1:paused, 2:unpaused but buffering
-	FLOAT	time_factor;
-	FLOAT	time_stamp;
 
-	char	*data;				// main data buffer
-	char	*last_frame_data;
+// Class LoopBuffer
+int	LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT *currFrame ){
+	FLOAT	lastStamp = time_stamp;
+	time_stamp = timeStamp;
 
-	// Functions
+	if( lastStamp == time_stamp ){
+		memcpy( last_frame_data, currFrame, frame_size );
+		return	0;
+	}
 
-	int	AddFrame( FLOAT timeStamp, FLOAT *currFrame ){
-		FLOAT	lastStamp = time_stamp;
-		time_stamp = timeStamp;
+	FLOAT	*lastFrame = (FLOAT*)last_frame_data;
+	FLOAT	lastTime=lastStamp*time_factor, currTime=timeStamp*time_factor;
+	int		lastIndex=(int)lastTime, currIndex=(int)currTime;
+	for( int index=lastIndex+1; index<=currIndex; index++ ){
+		FLOAT	b=(index-lastTime)/(currTime-lastTime), a=1.0f-b;
+		if( ++current_frame == N_total_frames ){
+			if(draw_size)
+				memmove( &data[frame_size], &data[data_size-draw_size+frame_size], draw_size-frame_size );
+			current_frame = N_draw_frames;
+		}// scroll back
+		FLOAT	*pDst = (FLOAT*)&data[frame_size*current_frame];
+		for( int y=0,z=frame_size/sizeof(FLOAT); y<z; y++ ){
+			pDst[y] = lastFrame[y]*a+currFrame[y]*b;
+		}// do linear interpolation
+	}
+	memcpy( lastFrame, currFrame, frame_size );
 
-		if( lastStamp == time_stamp ){
-			memcpy( last_frame_data, currFrame, frame_size );
-			return	0;
-		}
+	if(N_draw_frames>1)
+		return	(currIndex-lastIndex)%N_draw_frames;
+	return	(currIndex-lastIndex);
+}// constant scrolling speed
 
-		FLOAT	*lastFrame = (FLOAT*)last_frame_data;
-		FLOAT	lastTime=lastStamp*time_factor, currTime=timeStamp*time_factor;
-		int		lastIndex=(int)lastTime, currIndex=(int)currTime;
-		for( int index=lastIndex+1; index<=currIndex; index++ ){
-			FLOAT	b=(index-lastTime)/(currTime-lastTime), a=1.0f-b;
-			if( ++current_frame == N_total_frames ){
-				if(draw_size)
-					memmove( &data[frame_size], &data[data_size-draw_size+frame_size], draw_size-frame_size );
-				current_frame = N_draw_frames;
-			}// scroll back
-			FLOAT	*pDst = (FLOAT*)&data[frame_size*current_frame];
-			for( int y=0,z=frame_size/sizeof(FLOAT); y<z; y++ ){
-				pDst[y] = lastFrame[y]*a+currFrame[y]*b;
-			}// do linear interpolation
-		}
-		memcpy( lastFrame, currFrame, frame_size );
+int LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT val ){
+	FLOAT	lastStamp = time_stamp;
+	time_stamp = timeStamp;
 
-		if(N_draw_frames>1)
-			return	(currIndex-lastIndex)%N_draw_frames;
-		return	(currIndex-lastIndex);
-	}// constant scrolling speed
-
-	int AddFrame( FLOAT timeStamp, FLOAT val ){
-		FLOAT	lastStamp = time_stamp;
-		time_stamp = timeStamp;
-
-		if( lastStamp == time_stamp ){
-			*(FLOAT*)last_frame_data = val;
-			return	0;
-		}
-
-		FLOAT	lastTime=lastStamp*time_factor, currTime=timeStamp*time_factor;
-		int		lastIndex=(int)lastTime, currIndex=(int)currTime;
-		FLOAT	fstart = *(FLOAT*)last_frame_data;
-		FLOAT	finc = (val-fstart)/(currTime-lastTime);
-		int		last_frame = current_frame;
-		fstart += finc*(lastIndex+1-lastTime);
-
-		for( int index=lastIndex+1; index<=currIndex; index++ ){
-			if( ++current_frame == N_total_frames ){
-				if(draw_size) 
-					memmove( &data[frame_size], &data[data_size-draw_size+frame_size], draw_size-frame_size );
-				current_frame = N_draw_frames;
-			}// scroll back
-			((FLOAT*)data)[current_frame] = fstart;
-			fstart += finc;
-		}
+	if( lastStamp == time_stamp ){
 		*(FLOAT*)last_frame_data = val;
-		if(N_draw_frames>1)
-			return	(currIndex-lastIndex)%N_draw_frames;
-		return	currIndex-lastIndex;
+		return	0;
 	}
 
+	FLOAT	lastTime=lastStamp*time_factor, currTime=timeStamp*time_factor;
+	int		lastIndex=(int)lastTime, currIndex=(int)currTime;
+	FLOAT	fstart = *(FLOAT*)last_frame_data;
+	FLOAT	finc = (val-fstart)/(currTime-lastTime);
+	int		last_frame = current_frame;
+	fstart += finc*(lastIndex+1-lastTime);
 
-	LoopBuffer(	int		_N_total_frames,
-				int		_N_draw_frames,
-				int		_frame_size,
-				FLOAT	_fps	){
-		ResizeBuffer( _N_total_frames, _N_draw_frames, _frame_size, _fps );
+	for( int index=lastIndex+1; index<=currIndex; index++ ){
+		if( ++current_frame == N_total_frames ){
+			if(draw_size)
+				memmove( &data[frame_size], &data[data_size-draw_size+frame_size], draw_size-frame_size );
+			current_frame = N_draw_frames;
+		}// scroll back
+		((FLOAT*)data)[current_frame] = fstart;
+		fstart += finc;
 	}
-	~LoopBuffer(){
-		if( data ) free( data );
-	}
-	void ResizeBuffer(	int		_N_total_frames,
-						int		_N_draw_frames,
-						int		_frame_size,
-						FLOAT	_fps ){
-		memset( this, 0, sizeof(LoopBuffer) );
-		N_total_frames	= _N_total_frames;
-		N_draw_frames	= _N_draw_frames;
-		frame_size		= _frame_size;
-		time_factor		= _fps;
-		data			= (char*)realloc( data, N_total_frames*frame_size );
-		last_frame_data	= (char*)realloc( last_frame_data, frame_size );
-		Reset();
-	}
-	void	Reset(){
-		current_frame	= N_draw_frames-1;
-		draw_size		= N_draw_frames*frame_size;
-		data_size		= N_total_frames*frame_size;
-		status			= 0;
-		time_stamp		= 0;
-		memset( data, 0, data_size );
-		memset( last_frame_data, 0, frame_size );
-	}
-	FLOAT	*getCurrentPtrFront(){
-		return	(FLOAT*)&data[frame_size*(current_frame-N_draw_frames+1)];
-	}
-	FLOAT	*getCurrentPtrBack(){
-		return	(FLOAT*)&data[frame_size*current_frame];
-	}
-};
+	*(FLOAT*)last_frame_data = val;
+	if(N_draw_frames>1)
+		return	(currIndex-lastIndex)%N_draw_frames;
+	return	currIndex-lastIndex;
+}
 
 
-class	Camera{
-public:
-	GLwindow *GLmain;
-	FLOAT	eyev[3], centerv[3], upv[3], rightv[3];
-	FLOAT	viewAngle;
-	FLOAT	viewMat[16], projMat[16];
+LoopBuffer::LoopBuffer(	int		_N_total_frames,
+			int		_N_draw_frames,
+			int		_frame_size,
+			FLOAT	_fps	){
+	ResizeBuffer( _N_total_frames, _N_draw_frames, _frame_size, _fps );
+}
+LoopBuffer::~LoopBuffer(){
+	if( data ) free( data );
+}
+void LoopBuffer::ResizeBuffer(	int		_N_total_frames,
+					int		_N_draw_frames,
+					int		_frame_size,
+					FLOAT	_fps ){
+	memset( this, 0, sizeof(LoopBuffer) );
+	N_total_frames	= _N_total_frames;
+	N_draw_frames	= _N_draw_frames;
+	frame_size		= _frame_size;
+	time_factor		= _fps;
+	data			= (char*)realloc( data, N_total_frames*frame_size );
+	last_frame_data	= (char*)realloc( last_frame_data, frame_size );
+	Reset();
+}
+void	LoopBuffer::Reset(){
+	current_frame	= N_draw_frames-1;
+	draw_size		= N_draw_frames*frame_size;
+	data_size		= N_total_frames*frame_size;
+	status			= 0;
+	time_stamp		= 0;
+	memset( data, 0, data_size );
+	memset( last_frame_data, 0, frame_size );
+}
+FLOAT*	LoopBuffer::getCurrentPtrFront(){
+	return	(FLOAT*)&data[frame_size*(current_frame-N_draw_frames+1)];
+}
+FLOAT*	LoopBuffer::getCurrentPtrBack(){
+	return	(FLOAT*)&data[frame_size*current_frame];
+}
 
-	Camera( GLwindow *pWin ){
-		GLmain = pWin;
-		reset();
-	}
-	~Camera(){}
 
-	void reset(){
-		GLwindow *pGLwin=GLmain;
-		memset( this, 0, sizeof(Camera) );
-		GLmain	= pGLwin;
-		eyev[2] = 1.0f;
-		upv[1]	= 1.0f;
-		viewAngle = 45.0f;
-		updateCamera( eyev, centerv, upv );
-	}
-	void setCamera(){
-		glPushAttrib( GL_TRANSFORM_BIT );
-		glMatrixMode( GL_MODELVIEW );
-		glLoadMatrixf( viewMat );
-		glMatrixMode( GL_PROJECTION );
-		glLoadMatrixf( projMat );
-		glPopAttrib();
-	}
-	void updateCamera( FLOAT *eyev, FLOAT *objv, FLOAT *topv ){
-		GLfloat	dirv[3];
+// Class Camera
+Camera::Camera(){
+	reset();
+}
+Camera::~Camera(){}
 
-		glPushAttrib( GL_TRANSFORM_BIT );
-		glMatrixMode( GL_MODELVIEW );
-		glPushMatrix();
+void Camera::reset(){
+	memset( this, 0, sizeof(Camera) );
+	eyev[2] = 1.0f;
+	upv[1]	= 1.0f;
+	viewAngle = 45.0f;
+	updateCamera( eyev, centerv, upv );
+}
 
-		// Compute view matrix
-		VectorCopy( this->eyev, eyev );
-		VectorCopy( centerv, objv );
-		VectorSub( topv, eyev, upv );
-		VectorSub( centerv, eyev, dirv );
-		VectorCross( dirv, upv, rightv );
-		VectorCross( rightv, dirv, upv );
-		glLoadIdentity();
-		gluLookAt(	eyev[0], eyev[1], eyev[2],
-					centerv[0], centerv[1], centerv[2],
-					upv[0], upv[1], upv[2] );
-		glGetFloatv( GL_MODELVIEW_MATRIX, viewMat );
+void Camera::setCamera(){
+	glPushAttrib( GL_TRANSFORM_BIT );
+	glMatrixMode( GL_MODELVIEW );
+	glLoadMatrixf( viewMat );
+	glMatrixMode( GL_PROJECTION );
+	glLoadMatrixf( projMat );
+	glPopAttrib();
+}
 
-		// Compute projection matrix
-		glLoadIdentity();
-		gluPerspective( viewAngle, (GLdouble)GLmain->Width/GLmain->Height, 0.01, VIEWDISTANCE );
-		glGetFloatv( GL_MODELVIEW_MATRIX, projMat );
+void Camera::updateCamera( FLOAT *eyev, FLOAT *objv, FLOAT *topv ){
+	GLfloat	dirv[3];
 
-		glPopMatrix();
-		glPopAttrib();
-	}
-	void shiftUp( FLOAT dist ){
-		FLOAT	mov[3];
-		VectorNorm( upv );
-		VectorMul( upv, dist, mov );
-		VectorAdd( eyev, mov, eyev );
-		VectorAdd( centerv, mov, centerv );
-		glPushAttrib( GL_TRANSFORM_BIT );
-		glMatrixMode( GL_MODELVIEW );
-		glPushMatrix();
-		glLoadIdentity();
-		gluLookAt(	eyev[0], eyev[1], eyev[2],
-					centerv[0], centerv[1], centerv[2],
-					upv[0], upv[1], upv[2] );
-		glGetFloatv( GL_MODELVIEW_MATRIX, viewMat );
-		glPopMatrix();
-		glPopAttrib();
-	}// Shift camera upward
-};
+	// Get width and height
+	int Width, Height;
+	get_viewport_size(&Width, &Height);
 
+	// save GL states
+	glPushAttrib( GL_TRANSFORM_BIT );
+	glMatrixMode( GL_MODELVIEW );
+	glPushMatrix();
+
+	// Compute view matrix
+	VectorCopy( this->eyev, eyev );
+	VectorCopy( centerv, objv );
+	VectorSub( topv, eyev, upv );
+	VectorSub( centerv, eyev, dirv );
+	VectorCross( dirv, upv, rightv );
+	VectorCross( rightv, dirv, upv );
+	glLoadIdentity();
+	gluLookAt(	eyev[0], eyev[1], eyev[2],
+				centerv[0], centerv[1], centerv[2],
+				upv[0], upv[1], upv[2] );
+	glGetFloatv( GL_MODELVIEW_MATRIX, viewMat );
+
+	// Compute projection matrix
+	glLoadIdentity();
+	gluPerspective( viewAngle, (GLdouble)Width/Height, 0.01, VIEWDISTANCE );
+	glGetFloatv( GL_MODELVIEW_MATRIX, projMat );
+
+	// restore GL states
+	glPopMatrix();
+	glPopAttrib();
+}
+
+void Camera::shiftUp( FLOAT dist ){
+	FLOAT	mov[3];
+	VectorNorm( upv );
+	VectorMul( upv, dist, mov );
+	VectorAdd( eyev, mov, eyev );
+	VectorAdd( centerv, mov, centerv );
+	glPushAttrib( GL_TRANSFORM_BIT );
+	glMatrixMode( GL_MODELVIEW );
+	glPushMatrix();
+	glLoadIdentity();
+	gluLookAt(	eyev[0], eyev[1], eyev[2],
+				centerv[0], centerv[1], centerv[2],
+				upv[0], upv[1], upv[2] );
+	glGetFloatv( GL_MODELVIEW_MATRIX, viewMat );
+	glPopMatrix();
+	glPopAttrib();
+}// Shift camera upward
 
