@@ -30,14 +30,6 @@ class TempoVis:
 		self.rate = rate
 		self.verbose = verbose
 
-		# from src.stream_reader_pyaudio import Stream_Reader
-		# self.stream_reader = Stream_Reader(
-		# 	device=device,
-		# 	rate=rate,
-		# 	n_channels=n_channels,
-		# 	updates_per_second=updates_per_second,
-		# 	verbose=verbose)
-
 		try:
 			from src.stream_reader_pyaudio import Stream_Reader
 			self.stream_reader = Stream_Reader(

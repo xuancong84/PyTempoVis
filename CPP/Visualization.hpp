@@ -17,7 +17,7 @@ void get_viewport_size(int *Width, int *Height){
 	*Height = m_viewport[3];
 }
 
-int glXYPrintf(int X, int Y, WORD align, void *font, char* fmt, ...){
+int glXYvPrintf(int X, int Y, WORD align, void *font, char* fmt, va_list ap){
 /*Note: 'align' specifies where should the raster point be positioned in the 3D text box
   Its 2 lower order bytes specifies alignment along X,Y axis, i.e. align = 0xXXYY
   XX,YY	=	0   extreme left/bottom
@@ -29,10 +29,7 @@ int glXYPrintf(int X, int Y, WORD align, void *font, char* fmt, ...){
 	int 	ret;
 	char    text[256];
 	if(!fmt) return 0;
-	va_list	ap;
-	va_start(ap, fmt);
 	ret = vsnprintf(text, 256, fmt, ap);
-	va_end(ap);
 
 	// compute alignment
 	int size_cx = 0, size_cy = 0;
@@ -86,12 +83,18 @@ int glXYPrintf(int X, int Y, WORD align, void *font, char* fmt, ...){
 	return ret;
 }//print current font at specified position (X,Y)
 
-
-int glXYPrintf(int X, int Y, WORD align, char* fmt, ...){
-	int ret;
+int glXYPrintf(int X, int Y, WORD align, void *font, char* fmt, ...){
 	va_list	ap;
 	va_start(ap, fmt);
-	ret = glXYPrintf(X, Y, align, GLUT_BITMAP_9_BY_15, fmt, ap);
+	int ret = glXYvPrintf(X, Y, align, font, fmt, ap);
+	va_end(ap);
+	return ret;
+}
+
+int glXYPrintf(int X, int Y, WORD align, char* fmt, ...){
+	va_list	ap;
+	va_start(ap, fmt);
+	int ret = glXYvPrintf(X, Y, align, GLUT_BITMAP_9_BY_15, fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -265,7 +268,7 @@ void normCorr( FLOAT *data, int size ){
 		if( fval>maxV ) if( data[x]>data[x-1] ) maxV = fval;
 	}
 	*data = (maxV==-FLT_MAX)?1:maxV;
-	//CheckFloat(data,size);
+	CheckFloat(data,size);
 	//*data = 1;
 }// Normalize autocorrelation
 

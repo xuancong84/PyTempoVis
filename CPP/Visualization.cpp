@@ -14,6 +14,7 @@ Visualization::Visualization( BYTE *psData ){
 	N_total_frames	=	1024;
 	verts_per_line	=	128;
 	bins_per_bin	=	2;
+	freq_bin_cutoff	=	FFTSIZE/4;
 	PointSpriteData	=	psData;
 	init();
 }
@@ -250,7 +251,7 @@ void Visualization::reset( TimedLevel *pLevels ){
 	last_tempo_change_time2	= 0;
 	tempo_enhance_factor	= 1;
 	phase_enhance_factor	= 1;
-	if(freq_bin_cutoff>0)	freq_bin_cutoff	= 0;
+	if(freq_bin_cutoff>0)	freq_bin_cutoff	= 256;
 	if(!freq_bin_cutoff)	bins_per_bin	= 1;
 
 	fftBuffer->Reset();
@@ -307,8 +308,8 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 	if(n_added){
 		FLOAT	drawFFT[FFTSIZE];
 		FLOAT	fft_max = -FLT_MAX;
-		FLOAT	power_factor = (FLOAT)(FFTHEIGHT/power_level);
-		FLOAT	mul_factor = (FLOAT)(FFTEXPFACTOR/bins_per_bin);
+		FLOAT	power_factor = (FLOAT)(FFTMAXHEIGHT/power_level);
+		FLOAT	fft_sum = 0;
 		if( pLevels->frequency[1] ){
 			FLOAT *p1=pLevels->frequency[1];
 			for( int x=0; x<FFTSIZE; x++ ) curFFT[x] = (p1[x]+fft_data[x])*0.5f;
@@ -318,44 +319,31 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 			FLOAT	fval = sin( x*bins_per_bin*(float)M_PI_2/FFTSIZE );
 			FLOAT	sum	 = 0;
 			for( int y=0;y<bins_per_bin;y++,z++ ) sum += curFFT[z];
+			fft_sum += sum;
 			fval = sum/bins_per_bin;
 			if( fval>fft_max ) fft_max = fval;
 			drawFFT[x]=	fval*power_factor;
 		}// sum displayed freq. bins
 
-		if( fft_max*power_factor > FFTHEIGHT ){
+		if( fft_max*power_factor > FFTMAXHEIGHT ){
 			//__asm int 3
-			mul_factor	 = (FLOAT)(FFTHEIGHT/fft_max/power_factor);
-			power_factor = (FLOAT)(FFTHEIGHT/fft_max);
+			FLOAT mul_factor = (FLOAT)(FFTMAXHEIGHT/fft_max/power_factor);
+			power_factor = (FLOAT)(FFTMAXHEIGHT/fft_max);
 			power_level	 = max(RMSMIN, fft_max);
 			for(int x=0; x<verts_per_line; x++) drawFFT[x] *= mul_factor;
 		}
 
-		if( freq_bin_cutoff >= 0 ){
+		if( freq_bin_cutoff>=0 && fft_sum>0 ){
 			// Adapt FFT bin width: bins_per_bin
-			FLOAT	sum=0, mean=0;
-			for( int x=0; x<FFTSIZE; x++ ) mean += exp(curFFT[x]*FFTEXPFACTOR);
-			mean /= FFTSIZE;
-			for( int x=0; x<FFTSIZE; x++ ) sum += pow(exp(curFFT[x]*FFTEXPFACTOR)-mean,2);
-			if( sum > RMSMIN ){
-				sum *= 0.9f;
-				FLOAT	acc=0;
-				int		x;
-				for( x=0; x<FFTSIZE && acc<sum; x++ ) acc += pow(exp(curFFT[x]*FFTEXPFACTOR)-mean,2);
-				sum = (FLOAT)x;
-				expUpdate( &freq_bin_cutoff, &sum, 1, last_time_second, current_time_second, 4 );
-				if( freq_bin_cutoff > bins_per_bin*192 ){
-					if( bins_per_bin<8 ){
-						bins_per_bin++;
-						freq_bin_cutoff = (float)bins_per_bin*verts_per_line;
-					}
-				}else if( freq_bin_cutoff < bins_per_bin*96 ){
-					if( bins_per_bin>1 ){
-						bins_per_bin--;
-						freq_bin_cutoff = (float)bins_per_bin*verts_per_line;
-					}
-				}
-			}// extend bins if spectrum is wide
+			int 	x;
+			FLOAT	sum=0, cov_limit=fft_sum*FFTWIDTHCOVERAGE;
+			for( x=0; x<FFTSIZE; x++ ){
+				sum += curFFT[x];
+				if(sum>=cov_limit) break;
+			}
+			sum = x;
+			expUpdate( &freq_bin_cutoff, &sum, 1, last_time_second, current_time_second, FFTCUTOFFDECAY );
+			bins_per_bin = freq_bin_cutoff/verts_per_line+0.5;
 		}
 
 		// Add draw FFT
@@ -402,8 +390,8 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 		FLOAT	lin_energy = 0;
 		FLOAT	log_energy = 0;
 		for( int x=0; x<FFTSIZE; x++ ){
-			log_energy += curFFT[x];
-			lin_energy += exp(curFFT[x]*0.1f);
+			log_energy += log1pf(curFFT[x]);
+			lin_energy += curFFT[x];
 		}
 		TempoEBuffer->AddFrame( current_time_second, lin_energy/FFTSIZE );
 		b_added = BeltEBuffer->AddFrame( current_time_second, log_energy/FFTSIZE );
@@ -515,7 +503,7 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 				}
 				last_pri_tempo_index = pri_tempoInd;
 				tempoPeriod = (tempoInd+interPeakPosi(&TempoSpec[tempoInd]))/TempoPrecision;
-				//tempoMeter	= 2;//getMeter( tempoPeriod*TempoPrecision, TempoSpec, TempoMaxShift );
+				tempoMeter	= getMeter( tempoPeriod*TempoPrecision, TempoSpec, TempoMaxShift );
 			}else{
 				tempoInd = last_tempo_index;
 			}
@@ -887,7 +875,7 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	glPopClientAttrib();
 
 	{// Copy wave buffer
-		FLOAT	*pDst = &WaveBuffer[2], ratio=(FLOAT)WAVERINGWIDTH/128;
+		FLOAT	*pDst = &WaveBuffer[2], ratio=(FLOAT)WAVERINGWIDTH;
 		FLOAT	*pSrc = pLevels->waveform[0];
 		for( int x=0; x<FFTSIZE; x++, pDst+=3 ) *pDst = pSrc[x]*ratio;
 	}

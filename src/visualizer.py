@@ -3,7 +3,7 @@
 
 import numpy as np
 import time, sys, math, ctypes
-from collections import deque
+# from scipy import signal
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
@@ -47,11 +47,16 @@ class Music_Visualizer:
 		# return self.drawFunc1()
 
 		self.stream_reader.lock.acquire()
-		wav, tms = self.stream_reader.wav_data[0, -self.FFT_size*2:].copy(), self.stream_reader.wav_time
+		wav, tms = self.stream_reader.wav_data[0, -self.FFT_size*2-1:].copy()*128, self.stream_reader.wav_time
 		self.stream_reader.lock.release()
 
 		if tms is None: return
-		fft = np.log1p(np.abs(np.fft.rfft(wav, norm="ortho")[:self.FFT_size]))*1024
+		# Pre-emphasis
+		wav = wav[:-1] - wav[1:]*0.5
+
+		# Compute FFT
+		# fft = np.log1p(np.abs(np.fft.rfft(wav, norm="ortho")[:self.FFT_size]))*4096
+		fft = np.abs(np.fft.rfft(wav)[:self.FFT_size])*8
 		tml = TimedLevel((ctypes.c_void_p*2)(fft.astype(np.float32).ctypes.data, 0),
 		                 (ctypes.c_void_p*2)(wav.ctypes.data, 0),
 		                 int((tms-self.stream_reader.stream_start_time)*1e7), 2)

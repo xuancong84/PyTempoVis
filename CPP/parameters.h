@@ -81,12 +81,13 @@
 
 #define	FFTDURATION			4									// in seconds
 #define	FFTSIDELENGTH		0.3
-#define	FFTHEIGHT			0.08
+#define	FFTMAXHEIGHT		0.1
 #define	FFTALPHAMAX			192
 #define	ELEVATIONANGLE		15.0								// in degrees
 #define	ELEVATIONDIST		0.15								// vertical elevation between FFT and Belt
 #define	POWERHALFLIFE		4									// in seconds
-#define	FFTEXPFACTOR		0.03125f
+#define	FFTWIDTHCOVERAGE	0.96
+#define FFTCUTOFFDECAY      4                                   // in seconds
 
 // Lighting and material parameters
 #define	attn_const_0		1.0f								// attenuation, constant term

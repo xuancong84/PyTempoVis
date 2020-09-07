@@ -1,5 +1,6 @@
 // Vector Arithmetic using SSE, define USESIMD to enable SSE
 #include "parameters.h"
+#include "TempoVis.h"
 #include <math.h>
 #include <memory.h>
 
@@ -93,7 +94,7 @@ FLOAT VectorDot( float *v1, float *v2 ){
 	);
 	return	res;
 #else
-	return	v1[0]*v1[0]+v1[1]*v1[1]+v1[2]*v1[2];
+	return	v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2];
 #endif
 }
 
@@ -112,7 +113,7 @@ FLOAT Vector4Dot( float *v1, float *v2 ){
 	);
 	return	res;
 #else
-	return	v1[0]*v1[0]+v1[1]*v1[1]+v1[2]*v1[2];
+	return	v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2]+v1[3]*v2[3];
 #endif
 }
 
@@ -402,7 +403,7 @@ float* autoCorr( float *data_out, float *data_in, int max_shift, int Corr_window
 		float	*data1	=	data_in;
 		float	*data2	=	data1+x;
 		float	sum		=	0;
-		if( data2+8<=data_in ){
+		if( data2+8<=dataEnd ){
 			asm volatile(".intel_syntax noprefix\n"
 			"vxorps		ymm4,	ymm4,	ymm4\n"
 			"sub		rcx,	rbx\n"
@@ -425,14 +426,12 @@ float* autoCorr( float *data_out, float *data_in, int max_shift, int Corr_window
 			:"a"(data1), "b"(data2), "c"(dataEnd), "d"(&sum)
 			);
 		}
-//		assert(data2<=dataEnd);
 		for( ; data2<dataEnd; data1++,data2++ )
 			sum	+=	(*data1)*(*data2);
 
-		/*/			for( ; data2>=data_in; data1--,data2-- )
-		sum	+=	(*data1)*(*data2);
-		*/
+		CheckFloat(&sum);
 		data_out[x] = (float)(sum/(Corr_window_size-x));
+		CheckFloat(&data_out[x]);
 	}
 	return	data_out;
 	//CheckFloat( data_out, max_shift );

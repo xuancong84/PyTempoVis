@@ -58,6 +58,7 @@ enum PlayerState {
 };
 
 // Global functions
+extern bool	CheckFloat( float *f, int N=1 );
 extern void get_viewport_size(int *Width, int *Height);
 extern float* autoCorr( float *data_out, float *data_in, int max_shift, int Corr_window_size );
 extern float* (*ComputeNormal)( float* pVertex, float* pNormal, int width, int height );

@@ -57,9 +57,9 @@ const int	nTotalParams = nFilterBands+2;
 const int	nTotalBufs	 = 4+nFilterBands*3;
 
 
-bool	CheckFloat( float *f, int N=1 ){
+bool	CheckFloat( float *f, int N ){
 	for( int x=0; x<N; x++ )
-		if( f[x]>FLT_MAX || f[x]<-FLT_MAX || f[x]!=f[x] ){
+		if( f[x]>=FLT_MAX || f[x]<=-FLT_MAX || f[x]!=f[x] ){
 			asm(".intel_syntax noprefix\n"
 				"int 3");
 			return false;
@@ -99,12 +99,6 @@ extern "C" void CreateTempoVis(){
 }
 
 extern "C" void DrawFrame( TimedLevel *pLevels ){
-//	// Handle window resize
-//	RECT	rect;
-//	GetWindowRect( hWindow, &rect );
-//	if( rect.right-rect.left!=Width || rect.bottom-rect.top!=Height ){
-//		ResizeGLScene( rect.right-rect.left, rect.bottom-rect.top );
-//	}
 
 	if( !g_pVisual || pLevels->state != play_state ) return;
 
@@ -115,20 +109,17 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 	// Draw quad strip FFT
 	glPushAttrib(GL_ALL_ATTRIB_BITS);
 	glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
-	g_pVisual->DrawAll( pLevels, g_pVisual->addData( pLevels ) );
+	g_pVisual->DrawAll( pLevels, g_pVisual->addData( pLevels, true ) );
 	glPopClientAttrib();
 	glPopAttrib();
 
 	glColor4ub(0xff,0xff,0xff,0xff);
+
 	if( gm_showFPS || gm_debug ){
-		
-		// Show FPS
-		// glXYPrintf(0,16,(WORD)0,"%c FCnt:%d FPS=%.2f DPS=%.2f freq_bin_size=%d %s", (char)(gm_fullScreen?'#':'^'),
-		// 	g_pVisual->FPS_cnt, g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_status);
-		char text[256];
-		snprintf(&text[0], 256, "%c FCnt:%d FPS=%.2f DPS=%.2f freq_bin_size=%d %s", (char)(gm_fullScreen?'#':'^'),
-			g_pVisual->FPS_cnt, g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_status);
-		glXYPrintf(0,16,(WORD)0, text);
+		// Show FPS and debug info
+		glXYPrintf(0,16,(WORD)0,"%c FCnt:%d FPS=%.2f DPS=%.2f binSize=%d FFTcutOff=%.1f/%d %s", (char)(gm_fullScreen?'#':'^'),
+			g_pVisual->FPS_cnt, g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_pVisual->freq_bin_cutoff, FFTSIZE, g_status);
+
 		glXYPrintf(0,32,(WORD)0,"0 1 2 3 4 5 6 7 8 :SET_BIN_SIZE");
 
 		char ind[20]="";
