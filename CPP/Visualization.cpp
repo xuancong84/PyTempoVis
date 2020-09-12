@@ -233,15 +233,12 @@ void	Visualization::init(){
 	memcpy( current_eye, target_eye, sizeof(target_eye) );
 	RandomDirnVector( target_up );
 	memcpy( current_up, target_up, sizeof(target_up) );
-	FPS = (FLOAT)(FPS_cnt = 0);
-	FPS_startTick = clock();
 }
 
 void Visualization::reset( TimedLevel *pLevels ){
 	last_time_second	= 0;
 	last_time_second2	= 0;
 	last_tempo_est_time	= 0;
-	start_stamp		= 0;//pLevels?pLevels->timeStamp:
 	Data_cnt		= 0;
 	total_added 	= 0;
 	tempo_state 	= 0;
@@ -281,23 +278,18 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 
 	// Update FPS which is needed for rendering and tempo estimation
 	{
-		FLOAT	fval=0;
 		n_added = clock();
-		if( n_added != FPS_startTick ){
-			fval = (++FPS_cnt)*CLOCKS_PER_SEC/(n_added-FPS_startTick);
-			if( FPS_cnt>20 && fval>2 ){
-				FPS = (FPS+fval)*0.5f;
-				if( FPS_cnt>= 200 ){
-					FPS_cnt = 0;
-					FPS_startTick = clock();
-				}
-			}
-		}
-		if(!FPS) FPS = fval?fval:20;
+		FPS_currIntv = n_added-FPS_lastTick;
+		if( FPS_lastTick != 0 )
+			FPS_lastIntv = FPS_lastIntv>0?(FPS_currIntv*0.37 + FPS_lastIntv*0.63):FPS_currIntv;
+		else
+			FPS_currIntv = CLOCKS_PER_SEC/60;
+		FPS_lastTick = n_added;
+		FPS = FPS_lastIntv>0 ? (CLOCKS_PER_SEC/FPS_lastIntv) : 60;
 	}
 
 	// Get time stamp
-	current_time_second	= (FLOAT)(pLevels->timeStamp-start_stamp)*1e-7f;
+	current_time_second	= (pLevels->timeStamp)*1e-7f;
 	if( current_time_second<last_time_second ){
 		reset( pLevels );
 		current_time_second = 0;
@@ -363,11 +355,11 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 	// Add Amplitude data and do autocorrelation
 	if( n_added ){
 		Data_cnt ++;
-		Data_rate = (FLOAT)Data_cnt*1e7f/(pLevels->timeStamp-start_stamp);
+		Data_rate = Data_cnt * 1e7f / pLevels->timeStamp;
 
 		FLOAT Amax=-FLT_MAX, Amin=FLT_MAX;
 		for( int x=0 ;x<FFTSIZE; x++ ){
-			int A = (int)wav_data[x]-128;
+			FLOAT A = wav_data[x]*128;
 			if( A>Amax ) Amax = A;
 			else if( A<Amin ) Amin = A;
 		}
@@ -611,20 +603,20 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 					phase_slide( phaseDiff );
 					if( (tempo_enhance_factor*=pow(PhaseEnhTempoRatio,n_added)) > PhaseEnhTempoMax )	// enhance tempo strength
 						tempo_enhance_factor = PhaseEnhTempoMax;
-				}else	phase_change( phaseInd, n_added );
-			}else{
+				} else phase_change( phaseInd, n_added );
+			} else {
 				int	phaseDiff	= PhaseDiff( last_phase_index, phaseInd, tempoInd );
 				int	phaseDiff2	= PhaseDiff( last_phase_index, phaseInd2, tempoInd );
 				if( abs(phaseDiff)<2 ) phase_slide( phaseDiff );
 				else if( abs(phaseDiff2)<2 ){
 					phase_slide( phaseDiff2 );
 					phaseInd = phaseInd2;
-				}else phase_change( phaseInd, n_added );
+				} else phase_change( phaseInd, n_added );
 			}
 			tempoPhase = (FLOAT)M_2PI*(last_phase_posi+phaseInd)/tempoInd;
 			last_phase_index = phaseInd;
 		}else if( pLevels->state==play_state && tempoPeriod>0 )
-			tempoPhase += (FLOAT)(M_2PI/FPS/tempoPeriod);
+			tempoPhase += (FLOAT)(M_2PI/(CLOCKS_PER_SEC/FPS_currIntv)/tempoPeriod);
 
 		// Update random camera
 		if( n_added ){
@@ -777,7 +769,7 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 
 	// Start Drawing Graphics
 	if( pLevels->state != pause_state ){
-		belt_radial_posi += (FLOAT)(M_2PI/(FPS*SceneRotPeriod));
+		belt_radial_posi += (FLOAT)(M_2PI/((CLOCKS_PER_SEC/FPS_currIntv)*SceneRotPeriod));
 		if( belt_radial_posi >= M_2PI ) belt_radial_posi = fmod(belt_radial_posi,(FLOAT)M_2PI);
 		FLOAT	timeElapse = abs(pLevels->timeStamp*1e-7f - last_time_second3);
 		center_posi[0] = SPACERADIUS*0.5f*cos(belt_radial_posi);

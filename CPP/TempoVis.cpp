@@ -13,6 +13,7 @@
 #include	<map>
 #include	<cmath>
 #include	<unistd.h>
+#include	<thread>
 
 #include	"TempoVis.h"
 
@@ -29,9 +30,7 @@ char		*all_status[]={
 	"",
 	"Decompressing MP3...",
 	"Computing Tempo...",
-	"Recording Audio...",
-	"Recorder Initialization Failed!",
-	"WaveInSelect Failed!",
+	"Computing Tempo...Done!",
 };
 char	*g_status = all_status[0];
 char	*g_error = NULL;
@@ -45,13 +44,13 @@ float	zero_vector[4]	= { 0, 0, 0, 1 };
 float	ones_vector[4]	= { 1, 1, 1, 1 };
 float	zero_4vector[4]	= { 0, 0, 0, 0 };
 
-FLOAT	l_ambient[4]={0.4f,0.4f,0.4f,1.0f};
-FLOAT	l_diffuse[4]={0.2f,0.2f,0.2f,1.0f};
-FLOAT	l_specular[4]={1.5f,1.5f,1.5f,1.0f};
-FLOAT	m_ambient[4]={0.4f,0.4f,0.4f,1.0f};
-FLOAT	m_diffuse[4]={0.2f,0.2f,0.2f,1.0f};
-FLOAT	m_specular[4]={1.0f,1.0f,1.0f,1.0f};
-FLOAT	m_emissive[4]={0.01f,0.01f,0.01f,1.0f};
+FLOAT	l_ambient[4]	= {0.4f,0.4f,0.4f,1.0f};
+FLOAT	l_diffuse[4]	= {0.2f,0.2f,0.2f,1.0f};
+FLOAT	l_specular[4]	= {1.5f,1.5f,1.5f,1.0f};
+FLOAT	m_ambient[4]	= {0.4f,0.4f,0.4f,1.0f};
+FLOAT	m_diffuse[4]	= {0.2f,0.2f,0.2f,1.0f};
+FLOAT	m_specular[4]	= {1.0f,1.0f,1.0f,1.0f};
+FLOAT	m_emissive[4]	= {0.01f,0.01f,0.01f,1.0f};
 
 const int	nTotalParams = nFilterBands+2;
 const int	nTotalBufs	 = 4+nFilterBands*3;
@@ -117,8 +116,8 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 
 	if( gm_showFPS || gm_debug ){
 		// Show FPS and debug info
-		glXYPrintf(0,16,(WORD)0,"%c FCnt:%d FPS=%.2f DPS=%.2f binSize=%d FFTcutOff=%.1f/%d %s", (char)(gm_fullScreen?'#':'^'),
-			g_pVisual->FPS_cnt, g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_pVisual->freq_bin_cutoff, FFTSIZE, g_status);
+		glXYPrintf(0,16,(WORD)0,"%c FPS=%.2f DPS=%.2f binSize=%d FFTcutOff=%.1f/%d %s", (char)(gm_fullScreen?'#':'^'),
+			g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_pVisual->freq_bin_cutoff, FFTSIZE, g_status);
 
 		glXYPrintf(0,32,(WORD)0,"0 1 2 3 4 5 6 7 8 :SET_BIN_SIZE");
 
@@ -129,7 +128,7 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 		}
 		glXYPrintf(0,32,(WORD)0,strcat(ind,"_"));
 	}
-	if( gm_debug ){
+	if( gm_showFPS || gm_debug ){
 		glXYPrintf(0,48,(WORD)0,"Timestamp=%" PRId64 ", State=%d, Total_added=%d, Tempo=%d/%f [%f]",
 			pLevels->timeStamp, last_state, total_added, g_pVisual->last_phase_index,
 			g_pVisual->last_tempo_index+g_pVisual->tempo_period_frac, g_pVisual->preset_tempo);
@@ -140,3 +139,38 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 		if( g_error ) glXYPrintf(0,80,(WORD)0,"%s",g_error);
 	}
 }
+
+void TempoThreadFunc( FLOAT *fdata, int fsize, int sr ){
+	g_status = all_status[2];
+	float	tempo = ComputeTempo( fdata, fsize, sr );
+	g_status = all_status[3];
+	if(g_pVisual){
+		g_pVisual->preset_tempo = abs(tempo);
+		g_pVisual->preset_meter = tempo>0?2:3;
+	}
+}
+
+thread	*pTempoThread = NULL;
+FLOAT	*pTempoData = NULL;
+int		szTempoData = 0;
+extern "C" bool	CreateTempoThread( FLOAT *fdata, int fsize, int sr ){
+	if(pTempoThread){	// close the thread object if possible
+		if(!pTempoThread->joinable())
+			return false;
+		pTempoThread->join();
+		delete pTempoThread;
+		pTempoThread = NULL;
+	}
+	if(pTempoData && szTempoData!=fsize){	// release the buffer if size has changed
+		delete [] pTempoData;
+		pTempoData = NULL;
+	}
+	if(!pTempoData){	// allocate audio buffer for tempo estimation
+		pTempoData = new FLOAT [fsize];
+		szTempoData = fsize;
+	}
+	// create tempo estimation thread
+	memcpy(pTempoData, fdata, fsize*sizeof(FLOAT));
+	pTempoThread = new thread(TempoThreadFunc, pTempoData, fsize, sr);
+	return true;
+}// Thread for computing and saving tempo values

@@ -72,9 +72,6 @@ public:
 
 class	Visualization{
 public:
-	// Special parameters
-	int64_t		start_stamp;
-
 	// Normal parameters
 	int		N_total_frames;
 	int		N_draw_frames;
@@ -100,7 +97,7 @@ public:
 	int		tempoMeter;										// to distinguish 4/4 vs 3/3 meters
 	FLOAT	Data_rate;
 	DWORD	Data_cnt;
-	DWORD	FPS_cnt, FPS_startTick;
+	DWORD	FPS_lastIntv, FPS_lastTick, FPS_currIntv;
 	FLOAT	target_eye[3];									// target eye position coordinate
 	FLOAT	target_up[3];									// target up position coordinate
 	FLOAT	current_eye[3];									// current eye position coordinate

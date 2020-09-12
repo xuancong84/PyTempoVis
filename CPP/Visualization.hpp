@@ -268,7 +268,6 @@ void normCorr( FLOAT *data, int size ){
 		if( fval>maxV ) if( data[x]>data[x-1] ) maxV = fval;
 	}
 	*data = (maxV==-FLT_MAX)?1:maxV;
-	CheckFloat(data,size);
 	//*data = 1;
 }// Normalize autocorrelation
 

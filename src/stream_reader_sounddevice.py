@@ -1,9 +1,9 @@
 import numpy as np
 import time, sys, math, threading, code
 import sounddevice as sd
+from src.utils import LoopBuffer
 
-
-class Stream_Reader:
+class Stream_Reader(LoopBuffer):
 	"""
 	The Stream_Reader continuously reads data from a selected sound source using PyAudio
 
@@ -21,7 +21,8 @@ class Stream_Reader:
 	             updates_per_second = 1000,
 	             n_channels = 1,
 	             sample_type = np.float32,
-	             buffer_seconds=1.0,
+	             buffer_seconds = 1.0,
+	             buffer_fold = 0.5,
 	             verbose = False):
 
 		self.verbose = verbose
@@ -49,7 +50,7 @@ class Stream_Reader:
 		self.stream = sd.InputStream(
 			samplerate=self.rate,
 			blocksize=self.update_window_n_frames,
-			device=None,
+			device=self.device,
 			channels=n_channels,
 			dtype=sample_type,
 			latency='low',
@@ -60,12 +61,15 @@ class Stream_Reader:
 		self.device = self.stream.device
 
 		self.updates_per_second = self.rate / self.update_window_n_frames
-		self.buffer_size = int(self.rate * buffer_seconds + 0.5)
+		self.array_length = int(self.rate * buffer_seconds + 0.5)
 		self.info = ''
 		self.new_data = False
 
 		self.device_latency = self.device_dict[self.device]['default_low_input_latency']
 		self.infos = {'overview': str(sd.query_devices()).splitlines(), 'device_list': list(sd.query_devices())}
+
+		self.wav_time = None
+		super().__init__(self.stream._channels, self.array_length, fold_portion=buffer_fold, dtype=self.sample_type)
 
 	def __del__(self):
 		self.stream.close(True)
@@ -75,8 +79,7 @@ class Stream_Reader:
 		# code.interact(local=dict(globals(), **locals()) )
 		self.lock.acquire()
 		try:
-			self.wav_data[:, :-frame_count] = self.wav_data[:, frame_count:]
-			self.wav_data[:, -frame_count:] = indata.T
+			self.add(indata.T, lock=False)
 			self.wav_time = time_info.inputBufferAdcTime + frame_count / self.rate
 			if self.stream_start_time is None:
 				self.stream_start_time = time_info.inputBufferAdcTime
@@ -84,9 +87,6 @@ class Stream_Reader:
 			self.lock.release()
 
 	def stream_start(self):
-		self.wav_data = np.zeros([self.stream._channels, self.buffer_size], dtype=self.sample_type)
-		self.wav_time = None
-
 		self.stream.start()
 		self.stream_start_time = None
 

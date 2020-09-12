@@ -1,9 +1,8 @@
 import os, sys, pyaudio, threading, math, time, code
 import numpy as np
-from collections import deque
+from src.utils import LoopBuffer
 
-
-class Stream_Reader:
+class Stream_Reader(LoopBuffer):
 	"""
 	The Stream_Reader continuously reads data from a selected sound source using PyAudio
 
@@ -22,6 +21,7 @@ class Stream_Reader:
 	             n_channels = 1,
 	             sample_type = np.float32,
 	             buffer_seconds = 1.0,
+	             buffer_fold = 0.5,
 	             verbose = False):
 
 		self.verbose = verbose
@@ -37,7 +37,6 @@ class Stream_Reader:
 		              'device_list': [self.pa.get_device_info_by_index(i) for i in range(self.pa.get_device_count())]}
 		self.info = self.pa.get_device_info_by_index(self.device)
 		self.array_length = int(self.rate * buffer_seconds + 0.5)
-		self.lock = threading.Lock()
 
 		type_map = {
 			np.float32 : pyaudio.paFloat32,      #: 32 bit float
@@ -52,31 +51,27 @@ class Stream_Reader:
 			format = type_map[sample_type],
 			channels = n_channels,
 			rate = self.rate,
+			input_device_index = self.device,
 			input = True,
 			frames_per_buffer = self.update_window_n_frames,
 			stream_callback = self.non_blocking_stream_read)
 
+		self.wav_time = None
+		super().__init__(self.stream._channels, self.array_length, fold_portion=buffer_fold, dtype = self.sample_type)
+
 	def __del__(self):
-		self.stream.close()
-		self.pa.terminate()
+			self.stream.close()
+			self.pa.terminate()
 
 	def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
 		# when multiple channel, in_data is interleaved
 		# print(frame_count, time_info)
 		# code.interact(local=dict(globals(), **locals()) )
 		new_wav = np.frombuffer(in_data, dtype=self.sample_type).reshape([frame_count,self.stream._channels]).T
-		# if False:
-		# 	wav_data = np.concatenate([self.wav_data[:, frame_count:], new_wav], axis=1)
-		# 	wav_time = time_info['input_buffer_adc_time'] + frame_count / self.rate
-		# 	self.wav_data, self.wav_time = wav_data, wav_time
-		# else:
-		# 	# this is at least 4 times much faster, but has data race issue
-
 		self.lock.acquire()
 		try:
-			self.wav_data[:, :-frame_count] = self.wav_data[:, frame_count:]
-			self.wav_data[:, -frame_count:] = new_wav
-			self.wav_time = time_info['input_buffer_adc_time']+frame_count/self.rate
+			self.add(new_wav, lock=False)
+			self.wav_time = time_info['input_buffer_adc_time'] + frame_count / self.rate
 			if self.stream_start_time is None:
 				self.stream_start_time = time_info['input_buffer_adc_time']
 		finally:
@@ -85,11 +80,8 @@ class Stream_Reader:
 		return in_data, pyaudio.paContinue
 
 	def stream_start(self):
-		self.wav_data = np.zeros([self.stream._channels, self.array_length], dtype=self.sample_type)
-		self.wav_time = None
-
-		self.stream.start_stream()
 		self.stream_start_time = None
+		self.stream.start_stream()
 
 	def stream_stop(self):
 		self.stream.stop_stream()

@@ -7,6 +7,7 @@ import time, sys, math, ctypes
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
+from src.utils import *
 
 
 class TimedLevel(ctypes.Structure):
@@ -16,15 +17,56 @@ class TimedLevel(ctypes.Structure):
                ('state', ctypes.c_int32),
                ]
 
-class Music_Visualizer:
+class TempoVis:
 	""" The Music_Visualizer visualizes spectral FFT data """
 
-	def __init__(self, stream_reader, title='OpenGL window', full_screen=False):
+	def __init__(self,
+	             device=None,
+	             rate=None,
+	             updates_per_second=100,
+	             tempo_buffer_seconds=20,
+	             tempo_buffer_fold=0.25,
+	             tempo_calc_interval=5,
+	             n_channels=1,
+	             window_title='Music Tempo Visualizer',
+	             full_screen=False,
+	             verbose=False):
+
+		# Create audio stream reader
+		try:
+			# assert False  # to debug sounddevice
+			from src.stream_reader_pyaudio import Stream_Reader
+			self.stream_reader = Stream_Reader(
+				device=device,
+				rate=rate,
+				n_channels=n_channels,
+				buffer_seconds=tempo_buffer_seconds,
+				buffer_fold=tempo_buffer_fold,
+				updates_per_second=updates_per_second,
+				verbose=verbose)
+		except:
+			try:
+				from src.stream_reader_sounddevice import Stream_Reader
+				self.stream_reader = Stream_Reader(
+					device=device,
+					rate=rate,
+					n_channels=n_channels,
+					buffer_seconds=tempo_buffer_seconds,
+					buffer_fold=tempo_buffer_fold,
+					updates_per_second=updates_per_second,
+					verbose=verbose)
+			except:
+				raise Exception('device init failed, neither pyaudio nor sounddevice is working')
+
+		self.rate = self.stream_reader.rate
+		self.verbose = verbose
+
 		# Control parameters
 		self.isFullScreen = full_screen
-		self.windowTitle = title
+		self.windowTitle = window_title
 		self.FFT_size = 1024
-		self.stream_reader = stream_reader  # imported audio stream reader object, must have .wav_data & .wav_time
+		self.last_tempo_calc_time = None
+		self.tempo_calc_interval = tempo_calc_interval
 
 		# Initialize OpenGL window
 		glutInit()
@@ -46,22 +88,33 @@ class Music_Visualizer:
 	def drawFunc(self):
 		# return self.drawFunc1()
 
-		self.stream_reader.lock.acquire()
-		wav, tms = self.stream_reader.wav_data[0, -self.FFT_size*2-1:].copy()*128, self.stream_reader.wav_time
-		self.stream_reader.lock.release()
+		length = self.FFT_size*2+1
+		wav, tms = self.stream_reader.get(length=length), self.stream_reader.wav_time
+		if tms is None or wav.shape[1]<length: return
 
-		if tms is None: return
 		# Pre-emphasis
-		wav = wav[:-1] - wav[1:]*0.5
+		wav = wav[:, :-1] - wav[:, 1:]*0.0
 
 		# Compute FFT
-		# fft = np.log1p(np.abs(np.fft.rfft(wav, norm="ortho")[:self.FFT_size]))*4096
-		fft = np.abs(np.fft.rfft(wav)[:self.FFT_size])*8
-		tml = TimedLevel((ctypes.c_void_p*2)(fft.astype(np.float32).ctypes.data, 0),
-		                 (ctypes.c_void_p*2)(wav.ctypes.data, 0),
+		# fft = np.log1p(np.abs(np.fft.rfft(wav)[:, :self.FFT_size]))
+		fft = np.abs(np.fft.rfft(wav)[:, :self.FFT_size])
+		stereo = wav.shape[0]>1
+		tml = TimedLevel((ctypes.c_void_p*2)(fft[0,:].astype(np.float32).ctypes.data,
+		                                     fft[1,:].astype(np.float32).ctypes.data if stereo else 0),
+		                 (ctypes.c_void_p*2)(wav[0,:].ctypes.data, wav[1,:].ctypes.data if stereo else 0),
 		                 int((tms-self.stream_reader.stream_start_time)*1e7), 2)
 		self.tempoVis.DrawFrame(ctypes.pointer(tml))
 		glutSwapBuffers()
+
+		# Compute tempo at regular intervals
+		if self.last_tempo_calc_time is None:
+			self.last_tempo_calc_time = tms
+		elif tms-self.last_tempo_calc_time >= self.tempo_calc_interval:
+			self.last_tempo_calc_time = tms
+			wav = self.stream_reader.get()
+			if wav.shape[0]>1: wav = wav.mean(axis=0, keepdims=True)
+			print('compute tempo: length=%s sec'%(wav.shape[1]/self.stream_reader.rate))
+			self.tempoVis.CreateTempoThread(ctypes.c_void_p(wav[0,:].ctypes.data), wav.shape[1], self.stream_reader.rate)
 
 
 	def drawFunc1(self):
@@ -135,5 +188,8 @@ class Music_Visualizer:
 		glutSwapBuffers()
 
 	def start(self):
+		# Start audio recording
+		self.stream_reader.stream_start()
+
 		# Enter GLUT mainloop never returning
 		glutMainLoop()
