@@ -28,20 +28,21 @@
 #define	RECORDERSR		44100
 
 // Dynamic tempo-est parameters
-#define	TempoPrecision			100																	// ticks per second
+#define	TempoPrecision			120																	// ticks per second
 #define	TempoBufferLength		8																	// seconds
 #define	TempoMinBufferSize		2																	// seconds
 #define	TempoStableTime			4.0f																// in seconds
-#define	TempoMaxPeriod			6.0f																// in seconds, 10 bpm (exclusive)
+#define	TempoMaxPeriod			8.0f																// in seconds, 10 bpm (exclusive)
 #define	TempoMinPeriod			0.2f																// in seconds, 300 bpm(inclusive)
 #define	TempoHalfLife			16																	// seconds (tempo pattern memory)
 #define	PhaseHalfLife			32																	// seconds (phase pattern memory)
 #define	TempoMaxShift			(int)(TempoPrecision*TempoMaxPeriod+0.5)
-#define	CTempoPeriod			0.9f																// critical tempo period in second
+#define	CTempoPeriod			1.5f																// critical tempo period in second
 #define	CTempoEnhFactor			M_E																	// critical tempo enhancement factor
 #define	PhaseCombFiltSharp		0.05f																// Pulse width w.r.t 1 period
-#define	TempoPeakSharp			0.03125																// Pulse width w.r.t corr spec
+#define	TempoPeakSharp			0.05f																// Pulse width w.r.t corr spec
 #define	TempoEnhPhaseMax		1.4142f																// max tempo strength enhancement factor
+#define	PresetTempoEnhPhaseMax	4.0f																// max tempo strength enhancement factor
 #define	PhaseEnhTempoMax		1.4142f																// max tempo strength enhancement factor
 #define	TempoEnhPhaseMaxTime	6																	// time for tempo strength enhancement to reach max
 #define	PhaseEnhTempoMaxTime	6																	// time for tempo strength enhancement to reach max
@@ -49,6 +50,7 @@
 #define	PhaseEnhTempoRatio		pow(PhaseEnhTempoMax,1.0f/(PhaseEnhTempoMaxTime*TempoPrecision))	// tempo strength enhancement per phase lock
 #define	MinTempoPeriodStep		0.015625
 #define	MeterAmbiThreshold		0.03125f
+#define ResetDelayThreshold		3.0f																// minimum time difference to trigger a reset buffer
 
 // Graphic parameter
 #define	DELTA				1.0e-8f
@@ -74,10 +76,9 @@
 #define	SPINSTARSCALE		0.0025f								// scale of spin stars
 #define	WAVERINGWIDTH		(SPINRADIUS*0.2f)					// width of time waveform ring
 #define	STARRADIUS			8.0f								// length of star tips w.r.t cube radius (1.0f)
-#define	CameraSpeed			0.03125f							// w.r.t unit sphere per second
-#define	SceneRotPeriod		60									// in seconds times average FPS
+#define	DefaultCameraSpeed	0.03125f							// w.r.t unit sphere per second
+#define	DefaultSceneRotSpeed	1/60.0f							// in seconds times average FPS
 #define	StarScaleHalfLife	1									// in seconds
-//#define	SceneRotPeriod		M_PI*BELTDEPTHSIZE*SPACERADIUS/(BELT_FPS*BELTLENGTH)
 
 #define	FFTDURATION			4									// in seconds
 #define	FFTSIDELENGTH		0.3
@@ -96,8 +97,10 @@
 #define	shiny_const			20.0f								// attenuation, quadratic termconst int	BELT_INC  = (int)((FLOAT)TempoPrecision/BELT_FPS+0.5);
 
 // For offline estimation
-#define	window_size		0.04f			// in seconds
-#define	hop_size		0.01f			// in seconds
+#define	window_size		(4.0f/TempoPrecision)	// in seconds
+#define	hop_size		(1.0f/TempoPrecision)	// in seconds
 #define	delta_width		6
-#define	nFilterBands	8
+#define	nFilterBanks    8
 
+#define nTotalParams (nFilterBanks + 2)
+#define	nTotalBufs (6 + nFilterBanks * 3)

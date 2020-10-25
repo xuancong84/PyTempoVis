@@ -43,9 +43,11 @@ public:
 };
 
 class	LoopBuffer{
+	// All variables set to public for performance
 public:
 	int		N_total_frames;
 	int		N_draw_frames;
+	int		N_valid_frames;
 	int		frame_size;
 	int		current_frame;		// inclusive
 	int		draw_size;
@@ -53,21 +55,19 @@ public:
 	int		status;				// 0:playing or stopped, 1:paused, 2:unpaused but buffering
 	FLOAT	time_factor;
 	FLOAT	time_stamp;
-
 	char	*data;				// main data buffer
 	char	*last_frame_data;
 
-	// Functions
-	int	AddFrame( FLOAT timeStamp, FLOAT *currFrame );
-	int AddFrame( FLOAT timeStamp, FLOAT val );
-
-	LoopBuffer(	int	_N_total_frames, int _N_draw_frames, int _frame_size, FLOAT _fps);
+	LoopBuffer(int _N_total_frames, int _N_draw_frames, int _frame_size, FLOAT _fps);
 	~LoopBuffer();
 
-	void ResizeBuffer(int _N_total_frames, int _N_draw_frames, int _frame_size, FLOAT _fps);
-	void	Reset();
-	FLOAT	*getCurrentPtrFront();
-	FLOAT	*getCurrentPtrBack();
+	// Functions
+	int	AddFrame(FLOAT timeStamp, FLOAT *currFrame);
+	int AddFrame(FLOAT timeStamp, FLOAT val);
+	void	ResizeBuffer(int _N_total_frames, int _N_draw_frames, int _frame_size, FLOAT _fps);
+	void	Reset(FLOAT _time_stamp);
+	FLOAT*	getCurrentPtrFront();
+	FLOAT*	getCurrentPtrBack();
 };
 
 class	Visualization{
@@ -89,6 +89,8 @@ public:
 	int		last_phase_index;
 	int		last_phase_posi;
 	GLuint	texture_names[1];
+	FLOAT	global_H_rot, global_V_rot;
+	FLOAT	global_H_shift, global_V_shift;
 	FLOAT	last_tempo_change_time, last_tempo_change_time2;
 	FLOAT	last_tempo_est_time;
 	FLOAT	freq_bin_cutoff;								// for extending freq. bins
@@ -105,7 +107,7 @@ public:
 	FLOAT	center_posi[3];									// current center position coordinate
 	FLOAT	belt_radial_posi;								// head of the belt, [0,2*pi]
 	FLOAT	FPS;											// average no. of frames per second
-	FLOAT	tempoPeriod, tempoPhase;						// in seconds
+	FLOAT	tempoPeriod, tempoPhase, pri_tempoIndex;		// in seconds
 	FLOAT	tempo_enhance_factor;
 	FLOAT	phase_enhance_factor;
 	FLOAT	tempo_period_frac, tempo_period_step;			// fractional part of tempo period
@@ -166,7 +168,7 @@ public:
 	void	SetCosineArray( int tempoInd );
 
 	void	init();
-	void 	reset( TimedLevel *pLevels );
+	void 	reset( TimedLevel *pLevels, FLOAT _time_stamp );
 
 	int		addData( TimedLevel *pLevels, bool compute_tempo=false );
 
@@ -174,7 +176,12 @@ public:
 	void	phase_change( int phaseInd, int n_added );
 
 	void	DrawAll( TimedLevel *pLevels, int n_added );
-	void	setupLight( int n_light );
+	void	setupLight( int n_light, float brightness );
 };
+
+extern void get_viewport_size(int *Width, int *Height);
+extern void rotateBy(FLOAT *center2eye, FLOAT *center2right, FLOAT h);
+extern void HV_shift(FLOAT h, FLOAT v);
+extern void HV_rotation(FLOAT h, FLOAT v);
 
 #endif

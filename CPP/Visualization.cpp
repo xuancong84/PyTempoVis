@@ -16,6 +16,7 @@ Visualization::Visualization( BYTE *psData ){
 	bins_per_bin	=	2;
 	freq_bin_cutoff	=	FFTSIZE/4;
 	PointSpriteData	=	psData;
+	pri_tempoIndex	=	100;
 	init();
 }
 Visualization::~Visualization(){ free(); }
@@ -235,7 +236,7 @@ void	Visualization::init(){
 	memcpy( current_up, target_up, sizeof(target_up) );
 }
 
-void Visualization::reset( TimedLevel *pLevels ){
+void Visualization::reset( TimedLevel *pLevels, FLOAT _time_stamp ){
 	last_time_second	= 0;
 	last_time_second2	= 0;
 	last_tempo_est_time	= 0;
@@ -251,13 +252,13 @@ void Visualization::reset( TimedLevel *pLevels ){
 	if(freq_bin_cutoff>0)	freq_bin_cutoff	= 256;
 	if(!freq_bin_cutoff)	bins_per_bin	= 1;
 
-	fftBuffer->Reset();
-	TempoABuffer->Reset();
-	TempoEBuffer->Reset();
-	TempoEDBuffer->Reset();
-	TempoEDDBuffer->Reset();
-	BeltEBuffer->Reset();
-	BeltEDBuffer->Reset();
+	fftBuffer->Reset(_time_stamp);
+	TempoABuffer->Reset(_time_stamp);
+	TempoEBuffer->Reset(_time_stamp);
+	TempoEDBuffer->Reset(_time_stamp);
+	TempoEDDBuffer->Reset(_time_stamp);
+	BeltEBuffer->Reset(_time_stamp);
+	BeltEDBuffer->Reset(_time_stamp);
 	memset( last1FFT, 0, FFTSIZE );
 	memset( last2FFT, 0, FFTSIZE );
 	memset( PhaseAccBuf, 0, TempoMaxShift*sizeof(FLOAT) );
@@ -271,7 +272,7 @@ void Visualization::reset( TimedLevel *pLevels ){
 
 int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 	int		b_added=0, n_added, f_added=0;
-	bool	bNeed=( gm_debug || (!(gm_debug)&&preset_tempo<=0));
+	bool	bNeed=( gm_debug>=3 || (gm_debug<3&&preset_tempo<=0));
 	FLOAT	current_time_second, phase_energy;
 	FLOAT	curFFT[FFTSIZE];
 	FLOAT	*fft_data = pLevels->frequency[0], *wav_data = pLevels->waveform[0];
@@ -289,10 +290,10 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 	}
 
 	// Get time stamp
-	current_time_second	= (pLevels->timeStamp)*1e-7f;
-	if( current_time_second<last_time_second ){
-		reset( pLevels );
-		current_time_second = 0;
+	current_time_second	= (FLOAT)pLevels->timeStamp*1e-7f;
+	if (abs(current_time_second - last_time_second)>ResetDelayThreshold || current_time_second<last_time_second){
+		reset( pLevels, current_time_second );
+		last_time_second = current_time_second;
 	}
 	n_added = (current_time_second!=last_time_second);
 
@@ -355,7 +356,7 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 	// Add Amplitude data and do autocorrelation
 	if( n_added ){
 		Data_cnt ++;
-		Data_rate = Data_cnt * 1e7f / pLevels->timeStamp;
+		Data_rate = (FLOAT)Data_cnt*1e7f/pLevels->timeStamp;
 
 		FLOAT Amax=-FLT_MAX, Amin=FLT_MAX;
 		for( int x=0 ;x<FFTSIZE; x++ ){
@@ -371,7 +372,7 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 		n_added = TempoABuffer->AddFrame( current_time_second, pow(phase_energy/16.0f,4.0f) );
 		total_added +=  n_added;
 		if( bNeed ){
-			normCorr(autoCorr( corr_spec, TempoABuffer->getCurrentPtrFront(), TempoMaxShift, TempoABuffer->N_draw_frames ),TempoMaxShift);
+			autoCorr( corr_spec, TempoABuffer->getCurrentPtrFront(), TempoMaxShift, TempoABuffer->N_draw_frames );
 			expUpdate( TempoAcorr, corr_spec, TempoMaxShift, current_time_second>TempoBufferLength?last_time_second:0,
 				current_time_second, TempoHalfLife );
 		}
@@ -382,31 +383,31 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 		FLOAT	lin_energy = 0;
 		FLOAT	log_energy = 0;
 		for( int x=0; x<FFTSIZE; x++ ){
-			log_energy += log1pf(curFFT[x]);
-			lin_energy += curFFT[x];
+			log_energy += curFFT[x];
+			lin_energy += exp(curFFT[x]*0.1f);
 		}
 		TempoEBuffer->AddFrame( current_time_second, lin_energy/FFTSIZE );
 		b_added = BeltEBuffer->AddFrame( current_time_second, log_energy/FFTSIZE );
 		if( bNeed ){
-			normCorr(autoCorr( corr_spec, TempoEBuffer->getCurrentPtrFront(), TempoMaxShift, TempoPrecision*TempoBufferLength ),TempoMaxShift);
+			autoCorr( corr_spec, TempoEBuffer->getCurrentPtrFront(), TempoMaxShift, TempoPrecision*TempoBufferLength );
 			expUpdate( TempoEcorr, corr_spec, TempoMaxShift, current_time_second>TempoBufferLength?last_time_second:0,
 				current_time_second, TempoHalfLife );
 		}
 	}
-	// Add Energy Derivative data and do autocorrelation
+	// Add Energy positive-Derivative data and do autocorrelation
 	if( n_added ){
 		FLOAT	rms_energy = 0;
 
 		for(int x=0;x<FFTSIZE;x++){
 			FLOAT fval = (curFFT[x]-last1FFT[x]);
-			if(fval>0)
+			if(fval>0) 
 				rms_energy += fval*fval;
 		}
 		int x=BeltEDBuffer->AddFrame( current_time_second, (FLOAT)(rms_energy*0.00390625/FFTSIZE) );
 		if( x<b_added ) b_added=x;
 		TempoEDBuffer->AddFrame( current_time_second, (FLOAT)(rms_energy*0.00390625) );
 		if( bNeed ){
-			normCorr(autoCorr( corr_spec, TempoEDBuffer->getCurrentPtrFront(), TempoMaxShift, TempoPrecision*TempoBufferLength ),TempoMaxShift);
+			autoCorr( corr_spec, TempoEDBuffer->getCurrentPtrFront(), TempoMaxShift, TempoPrecision*TempoBufferLength );
 			expUpdate( TempoEDcorr, corr_spec, TempoMaxShift, current_time_second>TempoBufferLength?last_time_second:0,
 				current_time_second, TempoHalfLife );
 		}
@@ -421,7 +422,7 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 				rms_energy += fval*fval;
 		}
 		TempoEDDBuffer->AddFrame( current_time_second, rms_energy*0.00390625f/FFTSIZE );
-		normCorr(autoCorr( corr_spec, TempoEDDBuffer->getCurrentPtrFront(), TempoMaxShift, TempoPrecision*TempoBufferLength ),TempoMaxShift);
+		autoCorr( corr_spec, TempoEDDBuffer->getCurrentPtrFront(), TempoMaxShift, TempoPrecision*TempoBufferLength );
 		expUpdate( TempoEDDcorr, corr_spec, TempoMaxShift, current_time_second>TempoBufferLength?last_time_second:0,
 			current_time_second, TempoHalfLife );
 	}
@@ -434,198 +435,139 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 	// Estimate tempo
 	int		tempoInd = 0, tempoChanged = 0, pri_tempoInd;
 
-	if(compute_tempo){
-		// estimate tempo period
-		if( n_added ){
-			if( bNeed && current_time_second-last_tempo_est_time>CTempoPeriod ){
-				FLOAT	f1,f2,f3,f4;
-				last_tempo_est_time = current_time_second;
+	// estimate tempo period
+	if( n_added ){
+		if( bNeed && current_time_second-last_tempo_est_time>CTempoPeriod ){
+			FLOAT	f1,f2,f3,f4;
+			last_tempo_est_time = current_time_second;
 
-				memset( TempoSpec, 0, sizeof(TempoSpec) );
-				addCorr( TempoSpec, TempoAcorr, TempoMaxShift, f1=calcSpecWeightByMaxPeakHeight(TempoAcorr,TempoMaxShift) );
-				addCorr( TempoSpec, TempoEcorr,	TempoMaxShift, f2=calcSpecWeightByMaxPeakHeight(TempoEcorr,TempoMaxShift) );
-				addCorr( TempoSpec, TempoEDcorr,TempoMaxShift, f3=calcSpecWeightByMaxPeakHeight(TempoEDcorr,TempoMaxShift) );
-				addCorr( TempoSpec, TempoEDDcorr,TempoMaxShift,f4=calcSpecWeightByMaxPeakHeight(TempoEDDcorr,TempoMaxShift) );
+			memset( TempoSpec, 0, sizeof(TempoSpec) );
+			addCorr( TempoSpec, TempoAcorr, TempoMaxShift, f1 = computeSpecWeight(TempoAcorr,TempoMaxShift) );
+			addCorr( TempoSpec, TempoEcorr, TempoMaxShift, f2 = computeSpecWeight(TempoEcorr, TempoMaxShift));
+			addCorr( TempoSpec, TempoEDcorr, TempoMaxShift, f3 = computeSpecWeight(TempoEDcorr, TempoMaxShift));
+			addCorr( TempoSpec, TempoEDDcorr, TempoMaxShift, f4 = computeSpecWeight(TempoEDDcorr, TempoMaxShift));
 
-				getPeakSpectrum( TempoSpecP, TempoSpec, TempoMaxShift );
+			getPeakSpectrum( TempoSpecP, TempoSpec, TempoMaxShift );
 
-				for( int x=1; x<TempoMaxShift; x++ ){
-					if( !TempoSpecP[x] ) continue;
-					FLOAT fval = sqrt(TempoSpecP[x]);
-					fval = (FLOAT)hypot( fval, f1*calcPeakHeight( TempoAcorr, TempoMaxShift, (FLOAT)x ) );
-					fval = (FLOAT)hypot( fval, f2*calcPeakHeight( TempoEcorr, TempoMaxShift, (FLOAT)x ) );
-					fval = (FLOAT)hypot( fval, f3*calcPeakHeight( TempoEDcorr, TempoMaxShift, (FLOAT)x ));
-					fval = (FLOAT)hypot( fval, f4*calcPeakHeight( TempoEDDcorr, TempoMaxShift, (FLOAT)x ));
-					TempoSpecP[x] = (float)(fval*ExpWindowFunc[x]*ExpWindowFunc[TempoMaxShift-x]);
-				}
-
-				{// use offset, avoid scanning through all tempo values
-					int	offset  = (int)(TempoMinPeriod*TempoPrecision+0.5);
-					pri_tempoInd= findMax(&TempoSpecP[offset],TempoMaxShift-offset)+offset;
-					tempoInd	= adjustTempo( pri_tempoInd+interPeakPosi(&TempoSpec[pri_tempoInd]),
-								(int)(TempoMinPeriod*TempoPrecision+0.5),(int)(TempoMaxPeriod*TempoPrecision+0.5),
-								TempoSpec, TempoSpecP, TempoWindowFunc, TempoWindowFunc );
-				}
-
-				if( abs(tempoInd-last_tempo_index)>1 ){				// change tempo
-					if( isHarmonicMultiple(pri_tempoInd,last_pri_tempo_index) ){
-						if( testLower((FLOAT)max(pri_tempoInd,last_pri_tempo_index),
-							(FLOAT)min(pri_tempoInd,last_pri_tempo_index),TempoSpec,TempoMaxShift) )
-							if( TempoSpecP[last_tempo_index]*TempoWindowFunc[last_tempo_index]*PhaseEnhTempoMax
-								> TempoSpecP[tempoInd]*TempoWindowFunc[tempoInd] ){
-								tempoInd = findPeakPosi( TempoSpec, TempoMaxShift, last_tempo_index );
-								goto pass;
-							}
-					}
-					if( TempoSpecP[last_pri_tempo_index] > TempoSpecP[pri_tempoInd] ){
-						tempoInd = findPeakPosi( TempoSpec, TempoMaxShift, last_tempo_index );
-						pri_tempoInd = findPeakPosi( TempoSpec, TempoMaxShift, last_pri_tempo_index );
-						goto pass;
-					}
-					tempo_enhance_factor = 1;
-					phase_enhance_factor = 1;
-					last_tempo_change_time2 = last_tempo_change_time;
-					last_tempo_change_time = current_time_second;
-					tempoChanged = 2;
-				}else{
-	pass:
-					tempoChanged = last_tempo_index - tempoInd;
-					if( (phase_enhance_factor*=pow(TempoEnhPhaseRatio,n_added)) > TempoEnhPhaseMax )
-						phase_enhance_factor = TempoEnhPhaseMax;
-				}
-				last_pri_tempo_index = pri_tempoInd;
-				tempoPeriod = (tempoInd+interPeakPosi(&TempoSpec[tempoInd]))/TempoPrecision;
-				tempoMeter	= getMeter( tempoPeriod*TempoPrecision, TempoSpec, TempoMaxShift );
-			}else{
-				tempoInd = last_tempo_index;
+			{// get tempo from correlation spectrum
+				pri_tempoInd = findBestTempoPeak(TempoSpecP, TempoMaxShift);
+				tempoInd	= adjustTempo( pri_tempoInd+interPeakPosi(&TempoSpec[pri_tempoInd]),
+							(int)(TempoMinPeriod*TempoPrecision+0.5),(int)(TempoMaxPeriod*TempoPrecision+0.5),
+							TempoSpec, TempoSpecP, TempoWindowFunc, TempoWindowFunc );
 			}
+
+			if( abs(tempoInd-last_tempo_index)>1 ){				// change tempo
+				if( isHarmonicMultiple(pri_tempoInd,last_pri_tempo_index) ){
+					if( testLower((FLOAT)max(pri_tempoInd,last_pri_tempo_index),
+						(FLOAT)min(pri_tempoInd,last_pri_tempo_index),TempoSpec,TempoMaxShift) )
+						if( TempoSpecP[last_tempo_index]*TempoWindowFunc[last_tempo_index]*PhaseEnhTempoMax
+							> TempoSpecP[tempoInd]*TempoWindowFunc[tempoInd] ){
+							tempoInd = findPeakPosi( TempoSpec, TempoMaxShift, last_tempo_index );
+							goto pass;
+						}
+				}
+				if( TempoSpecP[last_pri_tempo_index] > TempoSpecP[pri_tempoInd] ){
+					tempoInd = findPeakPosi( TempoSpec, TempoMaxShift, last_tempo_index );
+					pri_tempoInd = findPeakPosi( TempoSpec, TempoMaxShift, last_pri_tempo_index );
+					goto pass;
+				}
+				tempo_enhance_factor = 1;
+				if (preset_tempo<=0)
+					phase_enhance_factor = 1;
+				last_tempo_change_time2 = last_tempo_change_time;
+				last_tempo_change_time = current_time_second;
+				tempoChanged = 2;
+			}else{
+pass:
+				tempoChanged = last_tempo_index - tempoInd;
+				phase_enhance_factor *= pow(TempoEnhPhaseRatio, n_added);
+			}
+			last_pri_tempo_index = pri_tempoInd;
+			tempoPeriod = (tempoInd+interPeakPosi(&TempoSpec[tempoInd]))/TempoPrecision;
+			//tempoMeter	= 2;//getMeter( tempoPeriod*TempoPrecision, TempoSpec, TempoMaxShift );
+		}else{
+			tempoInd = last_tempo_index;
+		}
+	}
+	if( preset_tempo>0 ){
+		tempo_state		= 1;
+		tempoInd		= (int)(preset_tempo*TempoPrecision+0.5f);
+		tempoPeriod		= preset_tempo;
+		tempoMeter		= preset_meter;
+		if( tempoInd != last_tempo_index ){	// just finish ComputeTempo
+			tempo_period_frac	= (tempoInd-preset_tempo*TempoPrecision);
+			tempo_period_step	= (FLOAT)MinTempoPeriodStep*16;
+			phase_enhance_factor = 1;
+		}
+		if( n_added ) tempoChanged	= (tempoInd==last_tempo_index?0:2);
+	}else if( (current_time_second-last_tempo_change_time<TempoStableTime
+		&& last_tempo_change_time-last_tempo_change_time2<TempoStableTime)
+		|| tempoPeriod<TempoMinPeriod )	tempo_state = 0;
+	else tempo_state = 1;
+
+	if( n_added ) last_tempo_index = tempoInd;
+
+	// update tempo phase
+	if( n_added && tempoInd>0 ){
+		{// update phase accumulation buffer data
+			FLOAT *pFirst = TempoEDBuffer->getCurrentPtrFront();
+			FLOAT *pLast = TempoEDBuffer->getCurrentPtrBack();
+			vector <FLOAT> PhaseAccVec(tempoInd);
+			for (int x = 0; x < tempoInd; ++x){
+				FLOAT sum = 0;
+				int n = 0;
+				for (FLOAT *p = &pLast[-x]; p >= pFirst; p -= tempoInd, ++n)
+					sum += *p;
+				if (n)
+					PhaseAccVec[x] = sum / n;
+			}
+			int	phaseInd = findMax(PhaseAccVec.data(), tempoInd);
+			tempoPhase = (FLOAT)phaseInd / tempoInd*M_2PI;
+			last_phase_posi = (last_phase_posi + n_added) % tempoInd;
+			memcpy(PhaseAccBuf, &PhaseAccVec[last_phase_posi], (tempoInd - last_phase_posi)*sizeof(FLOAT));
+			memcpy(&PhaseAccBuf[tempoInd - last_phase_posi], &PhaseAccVec[0], last_phase_posi*sizeof(FLOAT));
 		}
 
-		if( preset_tempo>0 ){
-			tempo_state		= 1;
-			tempoInd		= (int)(preset_tempo*TempoPrecision+0.5f);
-			tempoPeriod		= preset_tempo;
-			tempoMeter		= preset_meter;
-			if( tempoInd != last_tempo_index ){
-				tempo_period_frac	= (tempoInd-preset_tempo*TempoPrecision);
-				tempo_period_step	= (FLOAT)MinTempoPeriodStep*16;
-				//assert(abs(tempo_period_frac)<=1);
+		// find phase position
+		int phaseInd = findMax( PhaseAccBuf, tempoInd );
+
+		// handle phase difference
+		if (phaseInd != last_phase_index){
+			FLOAT rel_phase_enhance_factor = 1 + (phase_enhance_factor-1) * TempoEDBuffer->N_valid_frames / TempoEDBuffer->N_draw_frames;
+			int shifted_last_phase_index = findPeakPosiWrap(PhaseAccBuf, tempoInd, last_phase_index);
+			if (PhaseAccBuf[phaseInd] > PhaseAccBuf[shifted_last_phase_index] * rel_phase_enhance_factor
+				&& PhaseAccBuf[phaseInd] > PhaseAccBuf[last_phase_index] * rel_phase_enhance_factor
+				&& abs(PhaseDiff(phaseInd, shifted_last_phase_index, tempoInd)) / FLOAT(tempoInd) > PhaseCombFiltSharp
+				&& abs(PhaseDiff(phaseInd, last_phase_index, tempoInd)) / FLOAT(tempoInd) > PhaseCombFiltSharp){
+				phase_change(phaseInd, n_added);
+			}else{
+				phaseInd = shifted_last_phase_index;
+				int	phaseDiff = PhaseDiff(last_phase_index, phaseInd, tempoInd);
+				phase_slide(phaseDiff);
+				tempo_enhance_factor *= PhaseEnhTempoRatio;
+				tempo_enhance_factor = min(tempo_enhance_factor, PhaseEnhTempoMax);
+				FLOAT max_phase_enhance_factor = (preset_tempo > 0 ? PresetTempoEnhPhaseMax : TempoEnhPhaseMax);
+				if ((phase_enhance_factor *= pow(TempoEnhPhaseRatio, n_added)) > max_phase_enhance_factor)
+					phase_enhance_factor = max_phase_enhance_factor;
 			}
-			phase_enhance_factor = 2.0f;
-			if( n_added ) tempoChanged	= (tempoInd==last_tempo_index?0:2);
-		}else if( (current_time_second-last_tempo_change_time<TempoStableTime
-			&& last_tempo_change_time-last_tempo_change_time2<TempoStableTime)
-			|| tempoPeriod<TempoMinPeriod )	tempo_state = 0;
-		else tempo_state = 1;
+		}else{
+			FLOAT max_phase_enhance_factor = (preset_tempo > 0 ? PresetTempoEnhPhaseMax : TempoEnhPhaseMax);
+			if ((phase_enhance_factor *= pow(TempoEnhPhaseRatio, n_added*2)) > max_phase_enhance_factor)
+				phase_enhance_factor = max_phase_enhance_factor;
+		}
+		
+		tempoPhase = (FLOAT)M_2PI*(last_phase_posi+phaseInd)/tempoInd;
+		last_phase_index = phaseInd;
+	}else if( pLevels->state==play_state && tempoPeriod>0 )
+		tempoPhase += (FLOAT)(M_2PI/FPS/tempoPeriod);
 
-		if( n_added ) last_tempo_index = tempoInd;
-
-		// update tempo phase
-		if( n_added && tempoInd>0 ){
-
-			{// update phase buffer
-				FLOAT	*pA, *pB;
-				int		n_toadd;
-				if( tempoChanged ){
-					{// set cosine array
-						FLOAT mul1 = (FLOAT)M_2PI/tempoInd;
-						FLOAT mul2 = (FLOAT)1/PhaseCombFiltSharp;
-						for( int x=0; x<tempoInd; x++ )
-							CombFilter[x] = (cos(x*mul1)+1)*0.5f*exp(-sin(0.5f*x*mul1)*mul2);
-					}
-					tempo_period_step	= 1;
-					tempo_period_frac	= interPeakPosi(&TempoSpec[tempoInd]);
-					tempo_period_acc	= 0;
-					if( abs(tempoChanged)==1 ){ // tempo slides, readjust buffer
-						FLOAT	tempAccBuf[TempoMaxShift];
-						resizeData( tempoInd+tempoChanged, 1, PhaseAccBuf, tempoInd, 1, tempAccBuf );
-						memcpy( PhaseAccBuf, tempAccBuf, tempoInd );
-						last_phase_posi = (int)((FLOAT)(last_phase_posi%(tempoInd+tempoChanged))*tempoInd/(tempoInd+tempoChanged)+0.5f);
-						goto tempo_no_change;
-					}else{						// tempo changed significantly, need to recompute phase from begining
-						memset( PhaseAccBuf, 0, sizeof(PhaseAccBuf) );
-						memset( PhaseAccBuf2, 0, sizeof(PhaseAccBuf2) );
-						pA = TempoEDBuffer->getCurrentPtrFront();
-						pB = TempoABuffer->getCurrentPtrFront();
-						n_toadd = TempoABuffer->N_draw_frames;
-						last_phase_posi = 0;
-					}
-				}else{
-	tempo_no_change:
-					pA = TempoEDBuffer->getCurrentPtrBack()-n_added+1;
-					pB = TempoABuffer->getCurrentPtrBack()-n_added+1;
-					n_toadd = n_added;
-				}
-
-				for( int x=0,y=0; x<n_toadd; x++,last_phase_posi++ ){
-					if( !(last_phase_posi%tempoInd) ){								// do exponential decay
-						if( y ) { y=0; continue; }
-						while( tempo_period_acc>1 ){
-							tempo_period_acc --;
-							if( tempo_period_frac>0 ){
-								last_phase_posi--;
-								y = 1;
-							}
-							else last_phase_posi++;
-						}
-						tempo_period_acc += abs(tempo_period_frac);
-					//	expUpdate( PhaseAccBuf, PhaseAccBuf2, tempoInd,
-					//		current_time_second-(FLOAT)tempoInd/TempoPrecision, current_time_second, PhaseHalfLife );
-						expUpdate( PhaseAccBuf, PhaseAccBuf2, tempoInd,
-							current_time_second-(FLOAT)tempoInd/TempoPrecision, current_time_second, (FLOAT)tempoInd*16/TempoPrecision );
-						memset( PhaseAccBuf2, 0, sizeof(PhaseAccBuf2) );
-					}
-
-					FLOAT fval = (FLOAT) hypot(pA[x],pB[x]);
-					//assert( tempoInd<TempoMaxShift );
-					for( int y=0; y<tempoInd; y++ )
-						PhaseAccBuf2[y] += fval*CombFilter[(last_phase_posi+y)%tempoInd];
-				}// add to phase accumulation buffer
-				last_phase_posi %= tempoInd;
-			}
-
-			FLOAT	PhaseAccBufP[TempoMaxShift];
-			getPeakSpectrum( PhaseAccBufP, PhaseAccBuf, tempoInd );
-			int	phaseInd	= findMax( PhaseAccBufP, tempoInd );
-
-			if( PhaseAccBufP[last_phase_index] )
-				PhaseAccBufP[last_phase_index] *= phase_enhance_factor;
-			else if(last_phase_index){
-				PhaseAccBufP[last_phase_index+1] *= phase_enhance_factor;
-				PhaseAccBufP[last_phase_index-1] *= phase_enhance_factor;
-			}// apply phase_enhance_factor
-
-			int	phaseInd2	= findMax( PhaseAccBufP,tempoInd );
-
-			if( phaseInd == phaseInd2 ){
-				int	phaseDiff = PhaseDiff( last_phase_index, phaseInd, tempoInd );
-				if( abs(phaseDiff)<2 ){			// allow slow phase sliding due to discrete tempo period
-					phase_slide( phaseDiff );
-					if( (tempo_enhance_factor*=pow(PhaseEnhTempoRatio,n_added)) > PhaseEnhTempoMax )	// enhance tempo strength
-						tempo_enhance_factor = PhaseEnhTempoMax;
-				} else phase_change( phaseInd, n_added );
-			} else {
-				int	phaseDiff	= PhaseDiff( last_phase_index, phaseInd, tempoInd );
-				int	phaseDiff2	= PhaseDiff( last_phase_index, phaseInd2, tempoInd );
-				if( abs(phaseDiff)<2 ) phase_slide( phaseDiff );
-				else if( abs(phaseDiff2)<2 ){
-					phase_slide( phaseDiff2 );
-					phaseInd = phaseInd2;
-				} else phase_change( phaseInd, n_added );
-			}
-			tempoPhase = (FLOAT)M_2PI*(last_phase_posi+phaseInd)/tempoInd;
-			last_phase_index = phaseInd;
-		}else if( pLevels->state==play_state && tempoPeriod>0 )
-			tempoPhase += (FLOAT)(M_2PI/(CLOCKS_PER_SEC/FPS_currIntv)/tempoPeriod);
-
-		// Update random camera
-		if( n_added ){
-			FLOAT timeElapse = abs(last_time_second2-current_time_second);
-			if( (abs(tempoPhase)<0.1f && timeElapse>0.9f) || timeElapse>5.0f ){
-				while( VectorDot(target_eye,current_eye)>0 )RandomDirnVector( target_eye );
-				while( VectorDot(target_up,current_up)>0 )	RandomDirnVector( target_up );
-				last_time_second2 = current_time_second;
-			}
+	// Update random camera
+	if( n_added ){
+		FLOAT timeElapse = abs(last_time_second2-current_time_second);
+		if( (abs(tempoPhase)<0.1f && timeElapse>0.9f) || timeElapse>5.0f ){
+			while( VectorDot(target_eye,current_eye)>0 )RandomDirnVector( target_eye );
+			while( VectorDot(target_up,current_up)>0 )	RandomDirnVector( target_up );
+			last_time_second2 = current_time_second;
 		}
 	}
 
@@ -682,7 +624,7 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 					}
 				}// Add a sprite
 			}// Add belt rings
-
+				
 			if( b_added < BELTDEPTHSIZE ){
 				int	offset = (BELTDEPTHSIZE-b_added-1)*BELTCIRCUMSIZE*3;
 				ComputeNormal(&BeltVB[offset],&BeltNB[offset],-BELTCIRCUMSIZE,b_added+1);
@@ -691,8 +633,8 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 					VectorAdd(n1,n2,n1);
 					VectorNorm(n1);
 				}
-			}else
-			ComputeNormal(BeltVB,BeltNB,-BELTCIRCUMSIZE,BELTDEPTHSIZE);
+			}else 
+				ComputeNormal(BeltVB,BeltNB,-BELTCIRCUMSIZE,BELTDEPTHSIZE);
 
 			BYTE	*pAlpha = &((BYTE*)BeltCB)[3];
 			for( int x=0; x<BELTDEPTHSIZE; x++ ){
@@ -703,9 +645,10 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 		{// update sprite alpha values
 			BYTE	*pAlpha = &((BYTE*)SpriteCB)[3];
 			FLOAT	*pSprite = &SpriteVB[2];
-			FLOAT	z_min = BELTTAIL, mul = 240.0f/BELTLENGTH;
+			static FLOAT z_min = BELTTAIL, mul = 240.0f/BELTLENGTH;
+			static FLOAT z_mul = 0.5f / RAND_MAX;
 			for( int x=0; x<sprite_count; x++,pAlpha+=4,pSprite+=3 ){
-				*pAlpha = (BYTE)((*pSprite-z_min)*mul+15.5);
+				*pAlpha = (BYTE)((*pSprite-z_min)*mul*(0.5f+(FLOAT)rand()*z_mul)+15.5f);
 			}
 		}
 	}
@@ -732,7 +675,10 @@ void	Visualization::phase_change( int phaseInd, int n_added ){
 	}else	tempo_enhance_factor= 1;
 }// phase changed
 
-void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
+void	Visualization::DrawAll(TimedLevel *pLevels, int n_added){
+
+	int Width, Height;
+	get_viewport_size(&Width, &Height);
 
 	if( n_added>0 ){
 		// Shift FFT vertex and normal buffer values
@@ -769,9 +715,9 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 
 	// Start Drawing Graphics
 	if( pLevels->state != pause_state ){
-		belt_radial_posi += (FLOAT)(M_2PI/((CLOCKS_PER_SEC/FPS_currIntv)*SceneRotPeriod));
+		belt_radial_posi += (FLOAT)(M_2PI*SceneRotSpeed/FPS);
 		if( belt_radial_posi >= M_2PI ) belt_radial_posi = fmod(belt_radial_posi,(FLOAT)M_2PI);
-		FLOAT	timeElapse = abs(pLevels->timeStamp*1e-7f - last_time_second3);
+		FLOAT	timeElapse = abs((FLOAT)pLevels->timeStamp*1e-7f-last_time_second3);
 		center_posi[0] = SPACERADIUS*0.5f*cos(belt_radial_posi);
 		center_posi[1] = 0;
 		center_posi[2] = SPACERADIUS*0.5f*sin(belt_radial_posi);
@@ -784,6 +730,7 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 			VectorAdd( current_up, delta_v, current_up );
 			VectorNorm( current_up );
 		}
+			
 		{// obtain up vector
 			FLOAT	eye_posi[3], top_posi[3];
 			VectorAdd( center_posi, current_eye, eye_posi );
@@ -794,9 +741,14 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 		last_time_second3 = (FLOAT)pLevels->timeStamp*1e-7f;
 	}
 
-	// Draw space points
+	// Set belt camera
 	camera->setCamera();
+	if (global_H_rot != 0 || global_V_rot!=0)
+		HV_rotation(global_H_rot, global_V_rot);
+	if (global_H_shift != 0 || global_V_shift!=0)
+		HV_shift(global_H_shift, global_V_shift);
 
+	// Draw space points
 	glDisable( GL_DEPTH_TEST );
 	glEnable( GL_FOG );
 	glEnable( GL_BLEND );
@@ -824,7 +776,7 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	glRotatef( belt_radial_posi*180/(FLOAT)M_PI, 0, -1, 0 );
 
 	glEnable( GL_POINT_SPRITE );
-	glPointSize( SPRITESIZE );
+	glPointSize( SPRITESIZE*Height/1024.0f );
 	glEnable( GL_TEXTURE_2D );
 	glTexEnvi( GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE );
 	glEnableClientState( GL_COLOR_ARRAY );
@@ -840,8 +792,8 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 
 	// Setup star light positions
 	float	mats[3][16];
-	if( tempo_state || gm_debug ){
-		FLOAT	star_posi[3] = { SPINRADIUS*cos(tempoPhase), SPINRADIUS*sin(tempoPhase), 0 };
+	if( tempo_state || gm_debug>=3 ){
+		FLOAT	star_posi[3] = { SPINRADIUS*sin(tempoPhase), -SPINRADIUS*cos(tempoPhase), 0 };
 		for( int x=0; x<tempoMeter; x++ ){
 			glPushMatrix();
 			glRotatef( x*360.0f/tempoMeter, 0, 0, 1 );
@@ -853,9 +805,15 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	}
 
 	// Draw Belt first, requires blending
-	setupLight( tempoMeter );
+	BYTE star_brightness = 0;
+	if ( tempo_state || gm_debug>=3 ){
+		star_brightness = (tempoMeter == 3) ? 
+			(BYTE)(pow(cos(tempoPhase*1.5f), 2.0f) * 240 + 15.5f) :
+			(BYTE)(pow(cos(tempoPhase), 4.0f) * 240 + 15.5f);
+	}
+	setupLight(tempoMeter, star_brightness/255.0f);
 	glColorMaterial( GL_FRONT, GL_AMBIENT_AND_DIFFUSE );
-	glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+	glPushClientAttrib( GL_CLIENT_ALL_ATTRIB_BITS );
 	glEnableClientState( GL_COLOR_ARRAY );
 	glEnableClientState( GL_NORMAL_ARRAY );
 	glVertexPointer( 3, GL_FLOAT, 0, BeltVB );
@@ -867,14 +825,14 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	glPopClientAttrib();
 
 	{// Copy wave buffer
-		FLOAT	*pDst = &WaveBuffer[2], ratio=(FLOAT)WAVERINGWIDTH;
+		FLOAT	*pDst = &WaveBuffer[2];
 		FLOAT	*pSrc = pLevels->waveform[0];
-		for( int x=0; x<FFTSIZE; x++, pDst+=3 ) *pDst = pSrc[x]*ratio;
+		for( int x=0; x<FFTSIZE; x++, pDst+=3 ) *pDst = pSrc[x]*WAVERINGWIDTH;
 	}
 
 	// Draw waveform
 	glDisableClientState( GL_COLOR_ARRAY );
-	glDisable(GL_LIGHTING);
+	glDisable( GL_LIGHTING );
 	glDisable( GL_BLEND );
 	if( n_added > 0 )
 		wave_last_color = InterColor( wave_last_color, RandomColor(2), BELT_COLOR_SRC );
@@ -883,11 +841,9 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	glDrawArrays( GL_LINE_LOOP, 0, FFTSIZE );
 
 	// Draw Spin Stars
-	if( tempo_state || gm_debug ){
+	if( tempo_state || gm_debug>=3 ){
 		// max intensity at beat position
-		BYTE color =(tempoMeter==2)?(BYTE)(pow(cos(tempoPhase),4.0f)*240+15.5f):
-									(BYTE)(pow(cos(tempoPhase*1.5f),2.0f)*240+15.5f);
-		glColor3ub( color, color, color );
+		glColor3ub(star_brightness, star_brightness, star_brightness);
 		glVertexPointer( 3, GL_FLOAT, 0, StarVB );
 		glPushMatrix();
 		for( int x=0; x<tempoMeter; x++ ){
@@ -905,6 +861,10 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 		fft_camera->updateCamera( eyev, zero_vector, topv );
 		fft_camera->shiftUp( (FLOAT)ELEVATIONDIST );
 		fft_camera->setCamera();
+		if (global_H_rot != 0 || global_V_rot != 0)
+			HV_rotation(global_H_rot, global_V_rot);
+		if (global_H_shift != 0 || global_V_shift != 0)
+			HV_shift(global_H_shift, global_V_shift);
 	}
 	// Draw FFT
 	glEnable(GL_BLEND);
@@ -917,7 +877,7 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	glVertexPointer( 3, GL_FLOAT, 0, FFTVB );
 	glDisable( GL_DEPTH_TEST );
 	glMultiDrawElements( GL_LINE_STRIP, multidraw_count, GL_UNSIGNED_SHORT,
-						 (const void**)multidraw_first, fft_prim_count );
+							(const void**)multidraw_first, fft_prim_count );
 
 	// Draw FFT front when playing
 	glDisableClientState( GL_COLOR_ARRAY );
@@ -933,35 +893,9 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 	glPopClientAttrib();
 	glPopAttrib();
 
-	if( gm_debug ){
-
-		int	tempo_index = 0;
-		if( n_est ){
-			tempo_index = (int)(tempoPeriod/hop_size+0.5);
-			if( last_tempo_index>0 && last_tempo_index<TempoMaxPeriod*TempoPrecision ){
-				DrawSpikeArray( PhaseAccBuf, last_tempo_index, 1.0f/6.0f, 1.5f/6.0f, 0xffff0000, true );
-				DrawSpikeArray( CombFilter, last_tempo_index, 2.0f/6.0f, 2.5f/6.0f, 0xffff0000, true );
-			}
-			int Width, Height;
-			get_viewport_size(&Width, &Height);
-			for(int x=0; x<n_est;x++){
-				DrawSpikeArray( &est_spec[x][1], *(int*)est_spec[x], (float)x/n_est, (float)(x+1)/n_est, 0xff00ff00 );
-				glXYPrintf(Width>>1, Height*x/n_est, 0x0102, "%f, %f", est_fact[x], est_fact2[x]);
-			}
-		}else{
-			tempo_index = last_tempo_index;
-			if( last_tempo_index>0 && last_tempo_index<TempoMaxPeriod*TempoPrecision ){
-				DrawSpikeArray( PhaseAccBuf, last_tempo_index, 0.2f, 0.3f, 0xffff0000, true );
-				DrawSpikeArray( CombFilter, last_tempo_index, 0.4f, 0.5f, 0xffff0000, true );
-			}
-			DrawSpikeArray( TempoAcorr, TempoMaxShift, 0.2f, 0.4f, 0xff0000ff );
-			DrawSpikeArray( TempoEcorr, TempoMaxShift, 0.4f, 0.6f, 0xff00ff00 );
-			DrawSpikeArray( TempoEDcorr, TempoMaxShift, 0.6f, 0.8f, 0xffff0000 );
-			DrawSpikeArray( TempoEDDcorr, TempoMaxShift, 0.8f, 1.0f, 0xffffff00 );
-			DrawSpikeArray( TempoSpec, TempoMaxShift, 0.0f, 0.2f, 0xff00ffff );
-			DrawSpikeArray( TempoSpecP, TempoMaxShift, 0.0f, 0.2f, 0xffffff00, true );
-			DrawPointArray( TempoWindowFunc, TempoMaxShift, 0.0f, 0.2f, 0xffffffff );
-		}
+	if( gm_debug>=3 ){
+		// Draw tempo positions
+		int	tempo_index = est_spec.size() ? (tempoPeriod / hop_size + 0.5) : last_tempo_index;
 
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
@@ -970,31 +904,64 @@ void	Visualization::DrawAll( TimedLevel *pLevels, int n_added ){
 		if( tempo_index>0 ){
 			glLoadIdentity();
 			glOrtho(-1,TempoMaxShift,0,1,-1,1);
-			glColor3ub(0xff,0,0);
 			glBegin(GL_LINES);
-			glVertex2i(tempo_index,0);
+			if (pri_tempoIndex > 0){
+				glColor3ub(0xff, 0, 0xff);
+				glVertex2f(pri_tempoIndex, 0);
+				glVertex2f(pri_tempoIndex, 1);
+			}
+			glColor3ub(0xff, 0, 0);
+			glVertex2i(tempo_index, 0);
 			glVertex2i(tempo_index,1);
 			glEnd();
 		}
 		if( last_phase_index>0 ){
 			glLoadIdentity();
 			glOrtho(-1,tempo_index,0,1,-1,1);
-			glColor3ub(0,0,0xff);
+			glColor3ub(0xff,0xff,0);
 			glBegin(GL_LINES);
 			glVertex2i(last_phase_index,0);
 			glVertex2i(last_phase_index,1);
 			glEnd();
 		}
 
-	}// Draw all buffers
+		
+		if ( est_spec.size() && gm_debug>=3 ){
+			for (int x = 0; x<est_spec.size(); x++){
+				DrawSpikeArray( est_spec[x].data(), est_spec[x].size(), (float)x/est_spec.size(),
+					(float)(x+1)/est_spec.size(), 0xff00ff00, true );
+				glColor3ub(0xff, 0, 0);
+				if (x<est_fact.size() && x<est_fact2.size())
+					glXYPrintf(Width >> 1, Height*x / est_spec.size(),
+						0x0102, "%f, %f", est_fact[x], est_fact2[x]);
+			}
+			if( last_tempo_index>0 && last_tempo_index<TempoMaxPeriod*TempoPrecision ){
+				DrawSpikeArray( PhaseAccBuf, last_tempo_index, 1.0f/6.0f, 1.5f/6.0f, 0xffff0000, true );
+				//DrawSpikeArray( CombFilter, last_tempo_index, 2.0f/6.0f, 2.5f/6.0f, 0xffff0000, true );
+			}
+		}else{
+			DrawSpikeArray( TempoAcorr, TempoMaxShift, 0.2f, 0.4f, 0xff0000ff );
+			DrawSpikeArray( TempoEcorr, TempoMaxShift, 0.4f, 0.6f, 0xff00ff00 );
+			DrawSpikeArray( TempoEDcorr, TempoMaxShift, 0.6f, 0.8f, 0xffff0000 );
+			DrawSpikeArray( TempoEDDcorr, TempoMaxShift, 0.8f, 1.0f, 0xffffff00 );
+			DrawSpikeArray( TempoSpec, TempoMaxShift, 0.0f, 0.2f, 0xff00ffff );
+			DrawSpikeArray( TempoSpecP, TempoMaxShift, 0.0f, 0.2f, 0xffffff00, true );
+			DrawPointArray( TempoWindowFunc, TempoMaxShift, 0.0f, 0.2f, 0xffffffff );
+			if( last_tempo_index>0 && last_tempo_index<TempoMaxPeriod*TempoPrecision ){
+				DrawSpikeArray( PhaseAccBuf, last_tempo_index, 0.2f, 0.3f, 0xffff0000, true );
+				//DrawSpikeArray( CombFilter, last_tempo_index, 0.4f, 0.5f, 0xffff0000, true );
+			}
+		}
 
+	}// Draw all buffers
+		
 }
 
-void	Visualization::setupLight( int n_light ){
+void	Visualization::setupLight( int n_light, float brightness ){
 	float	_ambient[4], _diffuse[4], _specular[4];
 	Vector4Mul( l_ambient,	1.0f/n_light, _ambient );
-	Vector4Mul( l_diffuse,	1.0f/n_light, _diffuse );
-	Vector4Mul( l_specular,	1.0f/n_light, _specular );
+	Vector4Mul( l_diffuse, 1.0f / n_light, _diffuse);
+	Vector4Mul( l_specular, brightness / n_light, _specular);
 
 	// Set light properties
 	for( int x=0; x<n_light; x++ ){

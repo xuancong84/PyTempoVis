@@ -393,7 +393,7 @@ bool InvertMatrix( FLOAT *m, FLOAT *invOut)
 	return true;
 }
 
-float* autoCorr( float *data_out, float *data_in, int max_shift, int Corr_window_size ){
+float* autoCorr1( float *data_out, float *data_in, int max_shift, int Corr_window_size ){
 	float	*dataEnd = &data_in[Corr_window_size];
 	if( max_shift>Corr_window_size ){
 		memset( data_out, 0, sizeof(float)*max_shift );
@@ -437,6 +437,48 @@ float* autoCorr( float *data_out, float *data_in, int max_shift, int Corr_window
 	//CheckFloat( data_out, max_shift );
 }// Compute autocorrelation
 
+
+FLOAT* autoCorr(float *data_out, float *data_in, int max_shift, int data_size){
+	if (max_shift>data_size){
+		memset(data_out, 0, sizeof(float)*max_shift);
+		max_shift = data_size;
+	}
+	for (int x = 0; x<max_shift; x++){
+		float	*data_in2 = &data_in[x];
+		float	sum = 0;
+		// Do not use the entire residue buffer of size (data_size - x) to avoid aliasing
+		//register int	I = (x == 0 ? data_size : (data_size - x) / x * x);
+		int	I = data_size - x;
+		int	i = 0;
+/*
+		{// this block of AVX optimization code can be commented out if CPU/compiler does not support
+			__m256 ymm0 = _mm256_setzero_ps();
+			for (; i + 7 < I; i += 8){
+				__m256 ymm1 = _mm256_loadu_ps(&data_in[i]);
+				__m256 ymm2 = _mm256_loadu_ps(&data_in2[i]);
+				__m256 ymm3 = _mm256_mul_ps(ymm1, ymm2);
+				ymm0 = _mm256_add_ps(ymm0, ymm3);
+			}
+			float float8[8];
+			__m256 ymm1 = _mm256_setzero_ps();
+			ymm0 = _mm256_hadd_ps(ymm0, ymm1);
+			ymm0 = _mm256_hadd_ps(ymm0, ymm1);
+			_mm256_storeu_ps(float8, ymm0);
+			sum = float8[0] + float8[4];
+		}
+*/
+		for (; i<I; ++i)
+			sum += data_in[i]*data_in2[i];
+
+		data_out[x] = sum / I;
+	}
+
+	// normalize all values into 0 and 1 range
+	normCorr(data_out, max_shift);
+
+	return	data_out;
+	//CheckFloat( data_out, max_shift );
+}// Compute autocorrelation
 
 float* ComputeNormalA( float* pVertex, float* pNormal, int width, int height ){
 	// Negative width or height indicate wrap around

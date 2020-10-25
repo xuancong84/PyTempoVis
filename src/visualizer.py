@@ -77,13 +77,38 @@ class TempoVis:
 			glutFullScreen()
 		glutDisplayFunc(self.drawFunc)
 		glutIdleFunc(self.drawFunc)
+		glutKeyboardFunc(self.keyFunc)
+		glutSpecialFunc(self.keyFunc)
+		glutMouseFunc(self.mouseClickFunc)
+		glutMotionFunc(self.mouseMoveFunc)
+		self.X = self.Y = None
 
 		# Load and initialize DLL TempoVis class
 		self.tempoVis = ctypes.CDLL(os.getcwd()+'/tempovis.so')
 		self.tempoVis.CreateTempoVis()
-		ctypes.c_byte.in_dll(self.tempoVis, 'gm_debug').value = 1
-		ctypes.c_byte.in_dll(self.tempoVis, 'gm_showFPS').value = 1
+		self.gm_debug = ctypes.c_byte.in_dll(self.tempoVis, 'gm_debug')
+		self.gm_showFPS = ctypes.c_byte.in_dll(self.tempoVis, 'gm_showFPS')
 
+		self.gm_debug.value = 1
+		self.gm_showFPS.value = 1
+
+	def mouseMoveFunc(self, x, y):
+		pass
+
+	def mouseClickFunc(self, button, state, x, y):
+		if button == GLUT_LEFT_BUTTON:
+			if state == GLUT_DOWN:
+				self.X, self.Y = x, y
+			else:
+				self.X = self.Y = None
+
+	def keyFunc(self, key, x, y):
+		if key == b'\x1b':
+			sys.exit()
+		elif key == GLUT_KEY_F1:
+			self.gm_debug.value = min(3, self.gm_debug.value+1)
+		elif key == GLUT_KEY_F2:
+			self.gm_debug.value = max(0, self.gm_debug.value-1)
 
 	def drawFunc(self):
 		# return self.drawFunc1()
@@ -106,6 +131,7 @@ class TempoVis:
 		self.tempoVis.DrawFrame(ctypes.pointer(tml))
 		glutSwapBuffers()
 
+		# wav0 = self.stream_reader.get()
 		# Compute tempo at regular intervals
 		if self.last_tempo_calc_time is None:
 			self.last_tempo_calc_time = tms

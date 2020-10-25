@@ -227,22 +227,69 @@ FLOAT findPeakHeight( FLOAT *data, int size, int posi ){
 	return	1/(1/hLeft+1/hRight);
 }// Obtain the height and width of a peak
 
-int findPeakPosi( FLOAT *data, int size, int posi ){
+int findPeakPosi(FLOAT *data, int size, int posi){
 	int iLeft, iRight;
-	int x;
-	for( x=posi; x>=0 && data[x-1]>data[x]; x-- );
-	iLeft = (x==posi?0:x);
-	for( x=posi; x<size && data[x+1]>data[x]; x++ );
-	iRight = (x==posi?size:x);
-	if( !iLeft && iRight==size ) return	posi;
-	return	((posi-iLeft) < (iRight-posi))?iLeft:iRight;
+	if (posi < 0) posi = 0;
+	if (posi >= size) posi = size - 1;
+	for (int x = 0, X = max(posi, size - posi); x < X; ++x){
+		int p = posi + x;
+		if (p > 0 && p<size-1 && data[p]>data[p - 1] && data[p] > data[p + 1])
+			return p;
+		p = posi - x;
+		if (p > 0 && p<size-1 && data[p]>data[p - 1] && data[p] > data[p + 1])
+			return p;
+	}
+	return size/2;
 }// Obtain the position of closest peak
 
-FLOAT calcPeakHeight( FLOAT *data, int size, FLOAT posi ){
-	int x = findPeakPosi( data, size, (int)(posi+0.5f) );
-	FLOAT y = (FLOAT)((posi-x)/(posi*TempoPeakSharp));
-	return	findPeakHeight( data, size, x )*exp(-y*y);
+int findPeakPosiWrap(FLOAT *data, int size, int posi){
+	int iLeft, iRight;
+	if (posi < 0) posi = 0;
+	if (posi >= size) posi = size - 1;
+	for (int x = 0, X = size>>1; x < X; ++x){
+		int p = (posi + x) % size;
+		if (p > 0 && p<size-1 && data[p]>data[p - 1] && data[p] > data[p + 1])
+			return p;
+		p = (posi - x + size) % size;
+		if (p > 0 && p<size-1 && data[p]>data[p - 1] && data[p] > data[p + 1])
+			return p;
+	}
+	return size/2;
+}// Obtain the position of closest peak
+
+FLOAT calcPeakHeight(FLOAT *data, int size, FLOAT posi){
+	if (posi >= size || posi<=0)
+		return 0;
+	int x = findPeakPosi(data, size, (int)(posi + 0.5f));
+	FLOAT y = (max(abs(posi-x)-1, 0) / (posi*TempoPeakSharp));
+	return	findPeakHeight(data, size, x)*exp(-y*y);
 }// Obtain normalized peak height value
+
+FLOAT calcMaxPeakHeight(FLOAT *data, int size){
+	vector <FLOAT> left_min(size), right_min(size); // min value to the left/right of current position
+	FLOAT min_val = data[1];
+	for (int x = 0; x < size; ++x){
+			left_min[x] = min_val;
+			min_val = min(min_val, data[x]);
+	}
+	min_val = data[size - 1];
+	for (int x = size - 1; x >= 0; --x){
+			right_min[x] = min_val;
+			min_val = min(min_val, data[x]);
+	}
+	FLOAT   maxPeakHeight = 0;
+	for (int x = 2; x<size-1; ++x){
+			if (data[x]>data[x - 1] && data[x] > data[x + 1]){
+					FLOAT left_height = data[x] - left_min[x];
+					FLOAT right_height = data[x] - right_min[x];
+					FLOAT peak_height = (left_height == 0 || right_height == 0) ?
+							0 : 2.0 / (1.0/left_height+1.0/right_height);
+					if (peak_height > maxPeakHeight)
+							maxPeakHeight = peak_height;
+			}
+	}
+	return  maxPeakHeight;
+}
 
 int findMax( FLOAT *data, int size ){
 	int	posi = 0;
@@ -256,42 +303,44 @@ int findMax( FLOAT *data, int size ){
 	return	posi;
 }// Obtain maximum point
 
-void normCorr( FLOAT *data, int size ){
-	FLOAT	maxV = -FLT_MAX;
-	FLOAT	minV = findMinNon0( data, size );
+void normCorr(FLOAT *data, int size, FLOAT value){
+	FLOAT	maxV = getMax(data, size);
 
-	if( data[0]==minV ) return;
-	FLOAT	scale= (FLOAT)1.0/(data[0]-minV);
-	for( int x=1; x<size; x++ ){
-		FLOAT fval = (data[x]-minV)*scale;//*ExpWindowFunc[x];
-		data[x]	= fval<0?0:fval;
-		if( fval>maxV ) if( data[x]>data[x-1] ) maxV = fval;
+	if (maxV == 0) return;
+	FLOAT	scale = value / maxV;
+	for (int x = 0; x<size; x++){
+		data[x] = max(0, data[x] * scale);
 	}
-	*data = (maxV==-FLT_MAX)?1:maxV;
-	//*data = 1;
+	//CheckFloat(data,size);
 }// Normalize autocorrelation
 
-void addCorr( FLOAT *dst, FLOAT *src, int size, FLOAT factor=1 ){
-//	if(factor>1) __asm int 3
+void addCorr(FLOAT *dst, FLOAT *src, int size, FLOAT factor){
 	//if( !CheckFloat( &factor ) ) return;
-	if( factor==1 )
-		for( int x=0; x<size; x++ ){
-			FLOAT val = src[x];//*corr_scale;
-			dst[x] += val*val;
-		}
-	else{
-		factor *= factor;
-		for( int x=0; x<size; x++ ){
-			FLOAT val = src[x];//*corr_scale;
-			dst[x] += val*val*factor;
-		}
+	if (factor == 1){
+		for (int x = 0; x < size; x++)
+			dst[x] += src[x] * src[x];
+	}else{
+		for (int x = 0; x<size; x++)
+			dst[x] += src[x] * src[x] * factor;
 	}
 }// Add correlation spectrum
 
-void getPeakSpectrum( FLOAT *dst, FLOAT *src, int size ){
-	memset( dst, 0, sizeof(FLOAT)*size );
-	for( int x=1,y=size-1; x<y; x++ )
-		if( src[x]>src[x-1] && src[x]>src[x+1] ) dst[x] = src[x];
+void getPeakSpectrum(FLOAT *dst, FLOAT *src, int size){
+	FLOAT th = calcMaxPeakHeight(src, size)*0.25;
+	memset(dst, 0, sizeof(FLOAT)*size);
+	for (int x = 1, y = size - 1; x<y; x++)
+		if (src[x]>src[x - 1] && src[x]>src[x + 1])
+			if (calcPeakHeight(src,size,x) > th)
+				dst[x] = src[x];
+}// Get peak spectrum, non-peak position = 0
+
+void getPeakSpectrum(FLOAT *dst, FLOAT *src_peak, FLOAT *src_value, int size){
+	FLOAT th = calcMaxPeakHeight(src_peak, size)*0.25;
+	memset(dst, 0, sizeof(FLOAT)*size);
+	for (int x = 1, y = size - 1; x<y; x++)
+		if (src_peak[x]>src_peak[x - 1] && src_peak[x] > src_peak[x + 1])
+			if (calcPeakHeight(src_peak,size,x) > th)
+				dst[x] = src_value[x];
 }// Get peak spectrum, non-peak position = 0
 
 FLOAT calcSpecWeightByMaxPeakHeight( FLOAT *data, int size ){
@@ -401,7 +450,23 @@ int	getMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous ){
 	return	(level3>level21 && level3>level22)?3:2;
 }// determine whether it's a 3/3 meter
 
-int	getOuterMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous=NULL ){
+int	getInnerMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous ){
+	FLOAT	level3, level21, level22;
+	level3	= (calcPeakHeight( spec, size, pri_tempo*0.333333f )
+			 +calcPeakHeight( spec, size, pri_tempo*0.666666f) )/2;
+	level21	= calcPeakHeight( spec, size, pri_tempo*0.5f );
+	level22	= (calcPeakHeight( spec, size, pri_tempo*0.25f )
+			 +calcPeakHeight( spec, size, pri_tempo*0.75f ))/2;
+	if( bAmbiguous ){
+		if( abs(level3-level21)/max(level3,level21)	< MeterAmbiThreshold*2 )
+			*bAmbiguous |= 1;
+		if( abs(level3-level22)/max(level3,level22) < MeterAmbiThreshold*2 )
+			*bAmbiguous |= 2;
+	}
+	return	(level3>level21 && level3>level22)?3:2;
+}// determine whether it's a 3/3 meter inwards
+
+int	getOuterMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous ){
 	FLOAT	level3, level2, level4;
 	level2	= calcPeakHeight( spec, size, pri_tempo*2 );
 	level3	= calcPeakHeight( spec, size, pri_tempo*3 );
@@ -411,12 +476,10 @@ int	getOuterMeter( FLOAT pri_tempo, FLOAT *spec, int size, int *bAmbiguous=NULL 
 			&& abs(level3-level4)/max(level3,level4) < MeterAmbiThreshold )
 			*bAmbiguous = 1;
 	}
-	if( pri_tempo<CTempoPeriod*TempoPrecision ){
-		FLOAT	factor = CTempoPeriod*TempoPrecision/pri_tempo;
-		return	(level3>level2*factor && level3>level4*factor)?3:2;
-	}
 	return	(level3>level2 && level3>level4)?3:2;
-}// determine whether it's a 3/3 meter
+	//return	(level3>(level2+level4)*0.5f) ? 3 : 2;
+	//return	(level3>level2 || level3>level4) ? 3 : 2;
+}// determine whether it's a 3/3 meter outwards
 
 bool testLower( FLOAT pri_tempo, FLOAT lo_tempo, FLOAT *TempoSpec, int size ){
 	int		bAmbi;
@@ -453,38 +516,38 @@ bool testUpper( FLOAT pri_tempo, FLOAT hi_tempo, FLOAT *TempoSpec, int size ){
 	return	false;
 }// test whether can goto upper harmonics
 
-int	adjustTempo( float pri_tempo, int min_tempo, int max_tempo,
-						FLOAT *TempoSpec, FLOAT *PeakSpec,
-						FLOAT *Window2, FLOAT *Window3 ){
-	assert( pri_tempo>0 && pri_tempo<max_tempo );
+int Round(double v){
+	return (int)round(v);
+}
+int	adjustTempo(float pri_tempo, int min_tempo, int max_tempo,
+	FLOAT	*TempoSpec, FLOAT *PeakSpec, FLOAT *Window2, FLOAT *Window3){
+	if (pri_tempo < 0)
+		return -1;
 
-	float	best_tempo = pri_tempo;
-	float	new_val, cur_val = TempoSpec[(int)(pri_tempo+0.5f)]*
-		(getMeter(pri_tempo,TempoSpec,max_tempo)==2?Window2[(int)(pri_tempo+0.5f)]:Window3[(int)(pri_tempo+0.5f)]);
+	vector <FLOAT> valid_tempos(1, Round(pri_tempo));
 
-	//float	window = getMeter(pri_tempo,PeakSpec,max_tempo)==2?Window2[pri_tempo]:Window3[pri_tempo];
-	for( int x=min_tempo,y=(int)(pri_tempo*0.5625f); x<=y; x++ ){
-		if( !PeakSpec[x] ) continue;
-		if( !isHarmonicMultiple((int)(pri_tempo+0.5f),x) ) continue;
-		new_val = (getMeter( (FLOAT)x, TempoSpec, max_tempo )==2?Window2[x]:Window3[x])*TempoSpec[x];
-		if( new_val > cur_val ){
-			if( !testLower((FLOAT)pri_tempo,(FLOAT)x,TempoSpec,max_tempo) ) continue;
-			cur_val = new_val;
-			best_tempo = (FLOAT)x;
+	// search inwards
+	for (FLOAT cur_tempo = pri_tempo; (cur_tempo /= getInnerMeter(cur_tempo, TempoSpec, max_tempo)) >= min_tempo;
+		valid_tempos.push_back(cur_tempo));
+
+	// search outwards
+	for (FLOAT cur_tempo = pri_tempo; (cur_tempo *= getOuterMeter(cur_tempo, TempoSpec, max_tempo)) < max_tempo;
+		valid_tempos.push_back(cur_tempo));
+
+	// determine the best position by applying the window function
+	FLOAT	best_score = 0;
+	int		best_tempo = 0;
+	for (FLOAT cur_tempo : valid_tempos){
+		int		ipeak = findPeakPosi(TempoSpec, max_tempo, Round(cur_tempo));
+		FLOAT	score = calcPeakHeight(TempoSpec, max_tempo, cur_tempo)
+			*(getInnerMeter(cur_tempo, TempoSpec, max_tempo) == 3 ? Window3[ipeak] : Window2[ipeak]);
+		if (score > best_score){
+			best_score = score;
+			best_tempo = ipeak;
 		}
 	}
-	for( int x=(int)(pri_tempo*1.875f); x<max_tempo; x++ ){
-		if( !PeakSpec[x] ) continue;
-		if( !isHarmonicMultiple(x,(int)(pri_tempo+0.5f)) ) continue;
-		new_val = (getMeter( (FLOAT)x, TempoSpec, max_tempo )==2?Window2[x]:Window3[x])*TempoSpec[x];
-		if( new_val > cur_val ){
-			if( !testUpper((FLOAT)pri_tempo,(FLOAT)x,TempoSpec,max_tempo) ) continue;
-			cur_val = new_val;
-			best_tempo = (FLOAT)x;
-		}
-	}
 
-	return	(int)(best_tempo+0.5f);
+	return	best_tempo;
 }// adjust tempo index according to perceptual window
 
 void	DrawSpikeArray( FLOAT*vals, int size, float Vstart, float Vend, DWORD color=0xffffffff, bool zeroMin=false ){
@@ -632,7 +695,7 @@ void Realft (float* s)
 
 
 // Class LoopBuffer
-int	LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT *currFrame ){
+int	LoopBuffer::AddFrame(FLOAT timeStamp, FLOAT *currFrame){
 	FLOAT	lastStamp = time_stamp;
 	time_stamp = timeStamp;
 
@@ -640,6 +703,7 @@ int	LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT *currFrame ){
 		memcpy( last_frame_data, currFrame, frame_size );
 		return	0;
 	}
+	assert(timeStamp > lastStamp);
 
 	FLOAT	*lastFrame = (FLOAT*)last_frame_data;
 	FLOAT	lastTime=lastStamp*time_factor, currTime=timeStamp*time_factor;
@@ -647,14 +711,15 @@ int	LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT *currFrame ){
 	for( int index=lastIndex+1; index<=currIndex; index++ ){
 		FLOAT	b=(index-lastTime)/(currTime-lastTime), a=1.0f-b;
 		if( ++current_frame == N_total_frames ){
-			if(draw_size)
-				memmove( &data[frame_size], &data[data_size-draw_size+frame_size], draw_size-frame_size );
+			memmove( data, &data[data_size-draw_size], draw_size );
 			current_frame = N_draw_frames;
 		}// scroll back
 		FLOAT	*pDst = (FLOAT*)&data[frame_size*current_frame];
 		for( int y=0,z=frame_size/sizeof(FLOAT); y<z; y++ ){
 			pDst[y] = lastFrame[y]*a+currFrame[y]*b;
 		}// do linear interpolation
+		if (++N_valid_frames > N_draw_frames)
+			N_valid_frames = N_draw_frames;
 	}
 	memcpy( lastFrame, currFrame, frame_size );
 
@@ -663,7 +728,7 @@ int	LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT *currFrame ){
 	return	(currIndex-lastIndex);
 }// constant scrolling speed
 
-int LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT val ){
+int LoopBuffer::AddFrame(FLOAT timeStamp, FLOAT val){
 	FLOAT	lastStamp = time_stamp;
 	time_stamp = timeStamp;
 
@@ -680,13 +745,14 @@ int LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT val ){
 	fstart += finc*(lastIndex+1-lastTime);
 
 	for( int index=lastIndex+1; index<=currIndex; index++ ){
-		if( ++current_frame == N_total_frames ){
-			if(draw_size)
-				memmove( &data[frame_size], &data[data_size-draw_size+frame_size], draw_size-frame_size );
+		if( ++current_frame >= N_total_frames ){
+			memmove( data, &data[data_size-draw_size], draw_size );
 			current_frame = N_draw_frames;
 		}// scroll back
 		((FLOAT*)data)[current_frame] = fstart;
 		fstart += finc;
+		if (++N_valid_frames > N_draw_frames)
+			N_valid_frames = N_draw_frames;
 	}
 	*(FLOAT*)last_frame_data = val;
 	if(N_draw_frames>1)
@@ -695,7 +761,7 @@ int LoopBuffer::AddFrame( FLOAT timeStamp, FLOAT val ){
 }
 
 
-LoopBuffer::LoopBuffer(	int		_N_total_frames,
+LoopBuffer::LoopBuffer(int		_N_total_frames,
 			int		_N_draw_frames,
 			int		_frame_size,
 			FLOAT	_fps	){
@@ -704,7 +770,7 @@ LoopBuffer::LoopBuffer(	int		_N_total_frames,
 LoopBuffer::~LoopBuffer(){
 	if( data ) free( data );
 }
-void LoopBuffer::ResizeBuffer(	int		_N_total_frames,
+void LoopBuffer::ResizeBuffer(int		_N_total_frames,
 					int		_N_draw_frames,
 					int		_frame_size,
 					FLOAT	_fps ){
@@ -715,21 +781,22 @@ void LoopBuffer::ResizeBuffer(	int		_N_total_frames,
 	time_factor		= _fps;
 	data			= (char*)realloc( data, N_total_frames*frame_size );
 	last_frame_data	= (char*)realloc( last_frame_data, frame_size );
-	Reset();
+	Reset(0);
 }
-void	LoopBuffer::Reset(){
+void	LoopBuffer::Reset(FLOAT _time_stamp){
 	current_frame	= N_draw_frames-1;
 	draw_size		= N_draw_frames*frame_size;
 	data_size		= N_total_frames*frame_size;
 	status			= 0;
-	time_stamp		= 0;
+	time_stamp		= _time_stamp;
+	N_valid_frames	= 0;
 	memset( data, 0, data_size );
 	memset( last_frame_data, 0, frame_size );
 }
-FLOAT*	LoopBuffer::getCurrentPtrFront(){
+FLOAT	*LoopBuffer::getCurrentPtrFront(){
 	return	(FLOAT*)&data[frame_size*(current_frame-N_draw_frames+1)];
 }
-FLOAT*	LoopBuffer::getCurrentPtrBack(){
+FLOAT	*LoopBuffer::getCurrentPtrBack(){
 	return	(FLOAT*)&data[frame_size*current_frame];
 }
 
@@ -809,4 +876,90 @@ void Camera::shiftUp( FLOAT dist ){
 	glPopMatrix();
 	glPopAttrib();
 }// Shift camera upward
+
+void rotateBy(FLOAT *center2eye, FLOAT *center2right, FLOAT h){
+	FLOAT upv[3], v1[3], v2[3], v3[3];
+	VectorCross(center2eye, center2right, upv);
+	VectorNorm(upv);
+	VectorCross(upv, center2eye, center2right);
+	VectorMul(center2eye, cos(h), v1);
+	VectorMul(center2right, sin(h), v2);
+	VectorAdd(v1, v2, v3);
+	VectorMul(center2eye, -sin(h), v1);
+	VectorMul(center2right, cos(h), v2);
+	VectorAdd(v1, v2, center2right);
+	VectorCopy(center2eye, v3);
+}
+
+void HV_rotation(FLOAT h, FLOAT v){
+	glPushAttrib(GL_TRANSFORM_BIT);
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+
+	// Compute view matrix
+	FLOAT m[16], m1[16], m2[16];
+	FLOAT eyev[3] = { 0, 0, 1 };
+	FLOAT centerv[3] = { 0, -0.33, 0 };
+	FLOAT upv[3] = { 0, 1, 0 };
+	FLOAT rightv[3] = { 1, 0, 0 };
+
+	glLoadIdentity();
+	gluLookAt(eyev[0], eyev[1], eyev[2], centerv[0], centerv[1], centerv[2], upv[0], upv[1], upv[2]);
+	glGetFloatv(GL_MODELVIEW_MATRIX, m1);
+
+	rotateBy(eyev, rightv, h);
+	rotateBy(eyev, upv, v);
+
+	glLoadIdentity();
+	gluLookAt(eyev[0], eyev[1], eyev[2], centerv[0], centerv[1], centerv[2], upv[0], upv[1], upv[2]);
+	glGetFloatv(GL_MODELVIEW_MATRIX, m2);
+
+	InvertMatrix(m1, m1);
+	glLoadMatrixf(m2);
+	glMultMatrixf(m1);
+	glGetFloatv(GL_MODELVIEW_MATRIX, m);
+
+	glPopMatrix();
+
+	glGetFloatv(GL_MODELVIEW_MATRIX, m1);
+	glLoadMatrixf(m);
+	glMultMatrixf(m1);
+	glPopAttrib();
+}
+
+void HV_shift(FLOAT h, FLOAT v){
+	glPushAttrib(GL_TRANSFORM_BIT);
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+
+	// Compute view matrix
+	FLOAT m[16], m1[16], m2[16];
+	FLOAT eyev[3] = { 0, 0, 1 };
+	FLOAT centerv[3] = { 0, -0.33, 0 };
+	FLOAT upv[3] = { 0, 1, 0 };
+	FLOAT rightv[3] = { 1, 0, 0 };
+
+	glLoadIdentity();
+	gluLookAt(eyev[0], eyev[1], eyev[2], centerv[0], centerv[1], centerv[2], upv[0], upv[1], upv[2]);
+	glGetFloatv(GL_MODELVIEW_MATRIX, m1);
+
+	rotateBy(eyev, rightv, h);
+	rotateBy(eyev, upv, v);
+
+	glLoadIdentity();
+	gluLookAt(eyev[0], eyev[1], eyev[2], centerv[0], centerv[1], centerv[2], upv[0], upv[1], upv[2]);
+	glGetFloatv(GL_MODELVIEW_MATRIX, m2);
+
+	InvertMatrix(m1, m1);
+	glLoadMatrixf(m1);
+	glMultMatrixf(m2);
+	glGetFloatv(GL_MODELVIEW_MATRIX, m);
+
+	glPopMatrix();
+
+	glGetFloatv(GL_MODELVIEW_MATRIX, m1);
+	glLoadMatrixf(m);
+	glMultMatrixf(m1);
+	glPopAttrib();
+}
 

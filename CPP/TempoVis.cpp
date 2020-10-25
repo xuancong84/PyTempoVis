@@ -2,6 +2,7 @@
 #define __STDC_WANT_DEC_FP__
 #define	__DRAWFAST 1
 
+#include	<vector>
 #include	<assert.h>
 #include	<math.h>
 #include	<iostream>
@@ -34,6 +35,8 @@ char		*all_status[]={
 };
 char	*g_status = all_status[0];
 char	*g_error = NULL;
+FLOAT	CameraSpeed = DefaultCameraSpeed;
+FLOAT	SceneRotSpeed = DefaultSceneRotSpeed;
 
 const 	FLOAT BELT_OFF  = (FLOAT)M_PI/BELTCIRCUMSIZE;
 
@@ -51,10 +54,6 @@ FLOAT	m_ambient[4]	= {0.4f,0.4f,0.4f,1.0f};
 FLOAT	m_diffuse[4]	= {0.2f,0.2f,0.2f,1.0f};
 FLOAT	m_specular[4]	= {1.0f,1.0f,1.0f,1.0f};
 FLOAT	m_emissive[4]	= {0.01f,0.01f,0.01f,1.0f};
-
-const int	nTotalParams = nFilterBands+2;
-const int	nTotalBufs	 = 4+nFilterBands*3;
-
 
 bool	CheckFloat( float *f, int N ){
 	for( int x=0; x<N; x++ )
@@ -76,8 +75,9 @@ DWORD	PostEstThreadFunc( void *param );
 DWORD	PreEstThreadFunc( void *param );
 
 int		n_est=0, b_est=0, n_threads=0;
-float	*est_spec[nTotalBufs+4], est_fact[nTotalBufs+4], est_fact2[nTotalBufs+4];
 enum	PlayerState last_state = stop_state;
+vector <vector <FLOAT>> est_spec;
+vector <FLOAT>	est_fact, est_fact2;
 
 // Core export functions
 extern "C" void CreateTempoVis(){
@@ -114,7 +114,7 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 
 	glColor4ub(0xff,0xff,0xff,0xff);
 
-	if( gm_showFPS || gm_debug ){
+	if( gm_debug>=1 ){
 		// Show FPS and debug info
 		glXYPrintf(0,16,(WORD)0,"%c FPS=%.2f DPS=%.2f binSize=%d FFTcutOff=%.1f/%d %s", (char)(gm_fullScreen?'#':'^'),
 			g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_pVisual->freq_bin_cutoff, FFTSIZE, g_status);
@@ -128,7 +128,7 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 		}
 		glXYPrintf(0,32,(WORD)0,strcat(ind,"_"));
 	}
-	if( gm_showFPS || gm_debug ){
+	if( gm_debug>=2 ){
 		glXYPrintf(0,48,(WORD)0,"Timestamp=%" PRId64 ", State=%d, Total_added=%d, Tempo=%d/%f [%f]",
 			pLevels->timeStamp, last_state, total_added, g_pVisual->last_phase_index,
 			g_pVisual->last_tempo_index+g_pVisual->tempo_period_frac, g_pVisual->preset_tempo);
@@ -142,7 +142,7 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 
 void TempoThreadFunc( FLOAT *fdata, int fsize, int sr ){
 	g_status = all_status[2];
-	float	tempo = ComputeTempo( fdata, fsize, sr );
+	float	tempo = ComputeTempo( fdata, fsize, sr, g_pVisual->pri_tempoIndex );
 	g_status = all_status[3];
 	if(g_pVisual){
 		g_pVisual->preset_tempo = abs(tempo);
