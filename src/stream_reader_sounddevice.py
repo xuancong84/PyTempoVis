@@ -3,6 +3,8 @@ import time, sys, math, threading, code
 import sounddevice as sd
 from src.utils import LoopBuffer
 
+sys.g_N=0
+
 class Stream_Reader(LoopBuffer):
 	"""
 	The Stream_Reader continuously reads data from a selected sound source using PyAudio
@@ -68,27 +70,25 @@ class Stream_Reader(LoopBuffer):
 		self.device_latency = self.device_dict[self.device]['default_low_input_latency']
 		self.infos = {'overview': str(sd.query_devices()).splitlines(), 'device_list': list(sd.query_devices())}
 
-		self.wav_time = None
+		self.wav_time = None    # always starts from zero
 		super().__init__(self.stream._channels, self.array_length, fold_portion=buffer_fold, dtype=self.sample_type)
 
 	def __del__(self):
 		self.stream.close(True)
 
 	def non_blocking_stream_read(self, indata, frame_count, time_info, status):
-		# print(indata.shape, frame_count, time_info)
+		# print(indata.shape, frame_count, end='\r')
 		# code.interact(local=dict(globals(), **locals()) )
 		self.lock.acquire()
 		try:
 			self.add(indata.T, lock=False)
-			self.wav_time = time_info.inputBufferAdcTime + frame_count / self.rate
-			if self.stream_start_time is None:
-				self.stream_start_time = time_info.inputBufferAdcTime
+			self.wav_time = self.currTotalPosi / self.rate
 		finally:
 			self.lock.release()
 
 	def stream_start(self):
+		self.stream_start_time = time.time()
 		self.stream.start()
-		self.stream_start_time = None
 
 	def stream_stop(self):
 		self.stream.stop()

@@ -523,7 +523,9 @@ pass:
 			}
 			int	phaseInd = findMax(PhaseAccVec.data(), tempoInd);
 			tempoPhase = (FLOAT)phaseInd / tempoInd*M_2PI;
-			last_phase_posi = (last_phase_posi + n_added) % tempoInd;
+			last_phase_posi = (last_phase_posi + tempoInd + n_added) % tempoInd;
+			if (last_phase_posi<0 || last_phase_posi>10000)	// debug
+				last_phase_posi = 0;
 			memcpy(PhaseAccBuf, &PhaseAccVec[last_phase_posi], (tempoInd - last_phase_posi)*sizeof(FLOAT));
 			memcpy(&PhaseAccBuf[tempoInd - last_phase_posi], &PhaseAccVec[0], last_phase_posi*sizeof(FLOAT));
 		}
@@ -543,7 +545,7 @@ pass:
 			}else{
 				phaseInd = shifted_last_phase_index;
 				int	phaseDiff = PhaseDiff(last_phase_index, phaseInd, tempoInd);
-				phase_slide(phaseDiff);
+				phase_slide(phaseDiff, tempoInd);
 				tempo_enhance_factor *= PhaseEnhTempoRatio;
 				tempo_enhance_factor = min(tempo_enhance_factor, PhaseEnhTempoMax);
 				FLOAT max_phase_enhance_factor = (preset_tempo > 0 ? PresetTempoEnhPhaseMax : TempoEnhPhaseMax);
@@ -658,13 +660,13 @@ pass:
 	return	f_added;
 }
 
-void	Visualization::phase_slide( int phaseDiff ){
+void	Visualization::phase_slide( int phaseDiff, int tempoInd ){
 	if( phaseDiff ){
 		if( (tempo_period_step*=(FLOAT)0.5)<MinTempoPeriodStep )
 			tempo_period_step = (FLOAT)MinTempoPeriodStep;
 		tempo_period_frac -= phaseDiff*tempo_period_step;
 		tempo_period_acc = 0;
-		last_phase_posi	+= phaseDiff;
+		last_phase_posi	= (last_phase_posi+tempoInd+phaseDiff)%tempoInd;
 	}
 }// phase slide by 1
 

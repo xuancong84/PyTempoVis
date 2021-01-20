@@ -34,7 +34,7 @@ class TempoVis:
 
 		# Create audio stream reader
 		try:
-			# assert False  # to debug sounddevice
+			assert False  # to debug sounddevice
 			from src.stream_reader_pyaudio import Stream_Reader
 			self.stream_reader = Stream_Reader(
 				device=device,
@@ -58,7 +58,7 @@ class TempoVis:
 			except:
 				raise Exception('device init failed, neither pyaudio nor sounddevice is working')
 
-		self.rate = self.stream_reader.rate
+		self.rate = int(self.stream_reader.rate)
 		self.verbose = verbose
 
 		# Control parameters
@@ -104,7 +104,7 @@ class TempoVis:
 
 	def keyFunc(self, key, x, y):
 		if key == b'\x1b':
-			sys.exit()
+			glutLeaveMainLoop()
 		elif key == GLUT_KEY_F1:
 			self.gm_debug.value = min(3, self.gm_debug.value+1)
 		elif key == GLUT_KEY_F2:
@@ -114,20 +114,22 @@ class TempoVis:
 		# return self.drawFunc1()
 
 		length = self.FFT_size*2+1
-		wav, tms = self.stream_reader.get(length=length), self.stream_reader.wav_time
+		wav, tms = self.stream_reader.get(length=length)/16.0, self.stream_reader.wav_time
 		if tms is None or wav.shape[1]<length: return
 
 		# Pre-emphasis
-		wav = wav[:, :-1] - wav[:, 1:]*0.0
+		wav = wav[:, :-1] - wav[:, 1:]*0
 
 		# Compute FFT
-		# fft = np.log1p(np.abs(np.fft.rfft(wav)[:, :self.FFT_size]))
-		fft = np.abs(np.fft.rfft(wav)[:, :self.FFT_size])
+		fft = np.abs(np.fft.rfft(wav)[:, :self.FFT_size], dtype=wav.dtype)
+		fft = np.log1p(fft)*16
 		stereo = wav.shape[0]>1
-		tml = TimedLevel((ctypes.c_void_p*2)(fft[0,:].astype(np.float32).ctypes.data,
-		                                     fft[1,:].astype(np.float32).ctypes.data if stereo else 0),
-		                 (ctypes.c_void_p*2)(wav[0,:].ctypes.data, wav[1,:].ctypes.data if stereo else 0),
-		                 int((tms-self.stream_reader.stream_start_time)*1e7), 2)
+		tml = TimedLevel((ctypes.c_void_p*2)(fft[0,:].ctypes.data,
+		                                     fft[1,:].ctypes.data if stereo else 0),
+		                (ctypes.c_void_p*2)(wav[0,:].ctypes.data,
+		                                    wav[1,:].ctypes.data if stereo else 0),
+		                ctypes.c_int64(int(tms*1e7)),
+		                ctypes.c_int32(2))
 		self.tempoVis.DrawFrame(ctypes.pointer(tml))
 		glutSwapBuffers()
 
@@ -138,9 +140,16 @@ class TempoVis:
 		elif tms-self.last_tempo_calc_time >= self.tempo_calc_interval:
 			self.last_tempo_calc_time = tms
 			wav = self.stream_reader.get()
+			if False:
+				import pyaudio
+				p = pyaudio.PyAudio()
+				stream = p.open(format = pyaudio.paFloat32, channels = 2, rate = self.rate, output = True)
+				stream.write(wav.tobytes())
 			if wav.shape[0]>1: wav = wav.mean(axis=0, keepdims=True)
 			print('compute tempo: length=%s sec'%(wav.shape[1]/self.stream_reader.rate))
-			self.tempoVis.CreateTempoThread(ctypes.c_void_p(wav[0,:].ctypes.data), wav.shape[1], self.stream_reader.rate)
+			self.tempoVis.CreateTempoThread(ctypes.c_void_p(wav[0,:].ctypes.data),
+			                                ctypes.c_int32(wav.shape[1]),
+			                                ctypes.c_int32(int(self.stream_reader.rate)))
 
 
 	def drawFunc1(self):

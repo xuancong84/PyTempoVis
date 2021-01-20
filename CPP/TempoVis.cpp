@@ -153,7 +153,7 @@ void TempoThreadFunc( FLOAT *fdata, int fsize, int sr ){
 thread	*pTempoThread = NULL;
 FLOAT	*pTempoData = NULL;
 int		szTempoData = 0;
-extern "C" bool	CreateTempoThread( FLOAT *fdata, int fsize, int sr ){
+extern "C" bool	CreateTempoThread( FLOAT *fdata, int32_t fsize, int32_t sr ){
 	if(pTempoThread){	// close the thread object if possible
 		if(!pTempoThread->joinable())
 			return false;

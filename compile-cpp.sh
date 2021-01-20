@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 
 PYPATH="`which python3`"
 PYPATH="`dirname $PYPATH`"

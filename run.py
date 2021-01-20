@@ -8,6 +8,34 @@ from OpenGL.GLU import *
 
 
 # import pyaudio
+# pa = pyaudio.PyAudio()
+# chosen_device_index = -1
+# for x in range(0, pa.get_device_count()):
+# 	info = pa.get_device_info_by_index(x)
+# 	print(pa.get_device_info_by_index(x))
+# 	if info["name"] == "pulse":
+# 		chosen_device_index = info["index"]
+# 		print("Chosen index: ", chosen_device_index)
+#
+# stream = pa.open(format=pyaudio.paInt16, channels=1, rate=44100, input_device_index=chosen_device_index, input=True,
+#                  output=False, frames_per_buffer=44100)
+# frames = []
+# for i in range(3):
+# 	data = stream.read(44100)
+# 	frames.append(data)
+#
+# stream.stop_stream()
+# stream.close()
+#
+# play_stream = pa.open(format=pyaudio.paInt16, channels=1, rate=44100, output=True)
+# for frame in frames:
+# 	play_stream.write(frame)
+#
+# pa.terminate()
+#
+# aa=5
+
+# import pyaudio
 # import wave
 # import sys
 #
@@ -43,7 +71,7 @@ from OpenGL.GLU import *
 # stream.close()
 # p.terminate()
 
-
+# print('PID=', os.getpid())
 
 if __name__ == '__main__':
 

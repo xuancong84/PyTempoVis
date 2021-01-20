@@ -172,7 +172,7 @@ public:
 
 	int		addData( TimedLevel *pLevels, bool compute_tempo=false );
 
-	void	phase_slide( int phaseDiff );
+	void	phase_slide( int phaseDiff, int tempoInd );
 	void	phase_change( int phaseInd, int n_added );
 
 	void	DrawAll( TimedLevel *pLevels, int n_added );

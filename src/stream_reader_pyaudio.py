@@ -39,11 +39,11 @@ class Stream_Reader(LoopBuffer):
 		self.array_length = int(self.rate * buffer_seconds + 0.5)
 
 		type_map = {
-			np.float32 : pyaudio.paFloat32,      #: 32 bit float
-			np.int32 : pyaudio.paInt32,        #: 32 bit int
-			np.int16 : pyaudio.paInt16,        #: 16 bit int
-			np.int8 : pyaudio.paInt8,         #: 8 bit int
-			np.uint8 : pyaudio.paUInt8        #: 8 bit unsigned int
+			np.float32: pyaudio.paFloat32,  #: 32 bit float
+			np.int32: pyaudio.paInt32,  #: 32 bit int
+			np.int16: pyaudio.paInt16,  #: 16 bit int
+			np.int8: pyaudio.paInt8,  #: 8 bit int
+			np.uint8: pyaudio.paUInt8  #: 8 bit unsigned int
 		}
 
 		self.stream = self.pa.open(
@@ -56,7 +56,7 @@ class Stream_Reader(LoopBuffer):
 			frames_per_buffer = self.update_window_n_frames,
 			stream_callback = self.non_blocking_stream_read)
 
-		self.wav_time = None
+		self.wav_time = None    # always starts from zero
 		super().__init__(self.stream._channels, self.array_length, fold_portion=buffer_fold, dtype = self.sample_type)
 
 	def __del__(self):
@@ -65,22 +65,20 @@ class Stream_Reader(LoopBuffer):
 
 	def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
 		# when multiple channel, in_data is interleaved
-		# print(frame_count, time_info)
 		# code.interact(local=dict(globals(), **locals()) )
+		# print(type(in_data), frame_count)
 		new_wav = np.frombuffer(in_data, dtype=self.sample_type).reshape([frame_count,self.stream._channels]).T
 		self.lock.acquire()
 		try:
 			self.add(new_wav, lock=False)
-			self.wav_time = time_info['input_buffer_adc_time'] + frame_count / self.rate
-			if self.stream_start_time is None:
-				self.stream_start_time = time_info['input_buffer_adc_time']
+			self.wav_time = self.currTotalPosi / self.rate
 		finally:
 			self.lock.release()
 
 		return in_data, pyaudio.paContinue
 
 	def stream_start(self):
-		self.stream_start_time = None
+		self.stream_start_time = time.time()
 		self.stream.start_stream()
 
 	def stream_stop(self):
