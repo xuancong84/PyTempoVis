@@ -7,69 +7,32 @@ from OpenGL.GLUT import *
 from OpenGL.GLU import *
 
 
+# import numpy as np
 # import pyaudio
-# pa = pyaudio.PyAudio()
+# p = pyaudio.PyAudio()
 # chosen_device_index = -1
-# for x in range(0, pa.get_device_count()):
-# 	info = pa.get_device_info_by_index(x)
-# 	print(pa.get_device_info_by_index(x))
-# 	if info["name"] == "pulse":
+# for x in range(0, p.get_device_count()):
+# 	info = p.get_device_info_by_index(x)
+# 	print(p.get_device_info_by_index(x))
+# 	if info["name"] == "default":
 # 		chosen_device_index = info["index"]
 # 		print("Chosen index: ", chosen_device_index)
 #
-# stream = pa.open(format=pyaudio.paInt16, channels=1, rate=44100, input_device_index=chosen_device_index, input=True,
+# stream = p.open(format=pyaudio.paInt16, channels=32, rate=44100, input=True,
 #                  output=False, frames_per_buffer=44100)
-# frames = []
-# for i in range(3):
-# 	data = stream.read(44100)
-# 	frames.append(data)
+# frames = [stream.read(44100) for i in range(5)]
 #
 # stream.stop_stream()
 # stream.close()
 #
-# play_stream = pa.open(format=pyaudio.paInt16, channels=1, rate=44100, output=True)
-# for frame in frames:
-# 	play_stream.write(frame)
+# def play(chs, frames):
+# 	play_stream = p.open(format=pyaudio.paInt16, channels=len(chs), rate=44100, output=True)
+# 	[play_stream.write(np.frombuffer(data, dtype=np.int16).reshape([44100, 32])[:,chs].tobytes()) for data in frames]
 #
-# pa.terminate()
+# play([0,1], frames)
 #
-# aa=5
-
-# import pyaudio
-# import wave
-# import sys
-#
-# # open the file for reading.
-# wf = wave.open('/Users/xuancong/Desktop/test.wav', 'rb')
-#
-# # create an audio object
-# p = pyaudio.PyAudio()
-#
-# if False:
-# 	stream = p.open(format=
-# 	                p.get_format_from_width(wf.getsampwidth()),
-# 	                channels=wf.getnchannels(),
-# 	                rate=wf.getframerate(),
-# 	                output=True)
-# 	stream.write(wf.readframes(4410000))
-# else:
-# 	# open stream based on the wave object which has been input.
-# 	stream = p.open(format = pyaudio.paFloat32,
-# 	                channels = 1,
-# 	                rate = wf.getframerate(),
-# 	                output = True)
-#
-# 	# read data (based on the chunk size)
-# 	data = wf.readframes(4410000)
-# 	aa=np.frombuffer(data, dtype=np.int16)
-# 	bb=aa.reshape([1438532//2, 2]).astype(np.float32)/32768.
-#
-# 	# play stream (looping from beginning of file to the end)
-# 	stream.write(bb[:,0].tobytes())
-#
-# # cleanup stuff.
-# stream.close()
 # p.terminate()
+
 
 # print('PID=', os.getpid())
 
@@ -84,7 +47,7 @@ if __name__ == '__main__':
 	parser.add_argument('--sample-rate', '-sr', help='audio recording sampling rate', type=int, default=44100)
 	parser.add_argument('--tempo-buffer-seconds', '-tbs', help='compute tempo from last N seconds audio', type=int, default=12)
 	parser.add_argument('--tempo-calc-interval', '-tci', help='re-compute tempo every N seconds', type=int, default=5)
-	parser.add_argument('--fullscreen', '-fs', help='draw full screen', action='store_true')
+	parser.add_argument('--fullscreen', '-f', help='draw full screen', action='store_true')
 	parser.add_argument('--verbose', '-v', help='verbose mode', action='store_true')
 	# nargs='?': optional positional argument; action='append': multiple instances of the arg; type=; default=
 	opt = parser.parse_args()
@@ -99,6 +62,7 @@ if __name__ == '__main__':
 		tempo_buffer_seconds = tempo_buffer_seconds,
 		tempo_calc_interval = tempo_calc_interval,
 		updates_per_second = fps,  # How often to read the audio stream for new data
+		full_screen = fullscreen,
 		verbose = verbose  # Print running statistics (latency, fps, ...)
 	)
 

@@ -91,10 +91,11 @@ int glXYPrintf(int X, int Y, WORD align, void *font, char* fmt, ...){
 	return ret;
 }
 
+extern void	*g_font;
 int glXYPrintf(int X, int Y, WORD align, char* fmt, ...){
 	va_list	ap;
 	va_start(ap, fmt);
-	int ret = glXYvPrintf(X, Y, align, GLUT_BITMAP_9_BY_15, fmt, ap);
+	int ret = glXYvPrintf(X, Y, align, g_font, fmt, ap);
 	va_end(ap);
 	return ret;
 }

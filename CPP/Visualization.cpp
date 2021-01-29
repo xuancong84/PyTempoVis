@@ -366,7 +366,7 @@ int	Visualization::addData( TimedLevel *pLevels, bool compute_tempo ){
 		}
 		phase_energy = (FLOAT)(Amax-Amin);
 		{
-			FLOAT	new_scale = exp(phase_energy/362.0352f);
+			FLOAT	new_scale = log1p(phase_energy);
 			expUpdate( &star_scale, &new_scale, 1, last_time_second, current_time_second, StarScaleHalfLife );
 		}
 		n_added = TempoABuffer->AddFrame( current_time_second, pow(phase_energy/16.0f,4.0f) );

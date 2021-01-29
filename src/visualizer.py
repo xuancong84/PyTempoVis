@@ -73,34 +73,41 @@ class TempoVis:
 		glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH)
 		glutInitWindowSize(1024, 576)
 		self.hWindow = glutCreateWindow(self.windowTitle)
-		if self.isFullScreen:
-			glutFullScreen()
 		glutDisplayFunc(self.drawFunc)
 		glutIdleFunc(self.drawFunc)
 		glutKeyboardFunc(self.keyFunc)
 		glutSpecialFunc(self.keyFunc)
 		glutMouseFunc(self.mouseClickFunc)
 		glutMotionFunc(self.mouseMoveFunc)
-		self.X = self.Y = None
 
 		# Load and initialize DLL TempoVis class
 		self.tempoVis = ctypes.CDLL(os.getcwd()+'/tempovis.so')
 		self.tempoVis.CreateTempoVis()
 		self.gm_debug = ctypes.c_byte.in_dll(self.tempoVis, 'gm_debug')
 		self.gm_showFPS = ctypes.c_byte.in_dll(self.tempoVis, 'gm_showFPS')
+		self.gm_fullScreen = ctypes.c_byte.in_dll(self.tempoVis, 'gm_fullScreen')
 
+		# Set global variables in dynamic library
 		self.gm_debug.value = 1
 		self.gm_showFPS.value = 1
+		if self.isFullScreen:
+			glutFullScreen()
+			self.gm_fullScreen.value = 1
 
 	def mouseMoveFunc(self, x, y):
-		pass
+		self.tempoVis.onMouseMove(x, y)
 
 	def mouseClickFunc(self, button, state, x, y):
 		if button == GLUT_LEFT_BUTTON:
 			if state == GLUT_DOWN:
-				self.X, self.Y = x, y
+				self.tempoVis.onMouseButton(1, x, y)
 			else:
-				self.X = self.Y = None
+				self.tempoVis.onMouseButton(0, x, y)
+		elif button == GLUT_MIDDLE_BUTTON:
+			if state == GLUT_DOWN:
+				self.tempoVis.onMouseButton(3, x, y)
+			elif state == GLUT_UP:
+				self.tempoVis.onMouseButton(2, x, y)
 
 	def keyFunc(self, key, x, y):
 		if key == b'\x1b':
@@ -114,7 +121,7 @@ class TempoVis:
 		# return self.drawFunc1()
 
 		length = self.FFT_size*2+1
-		wav, tms = self.stream_reader.get(length=length)/16.0, self.stream_reader.wav_time
+		wav, tms = self.stream_reader.get(length=length), self.stream_reader.wav_time
 		if tms is None or wav.shape[1]<length: return
 
 		# Pre-emphasis
@@ -122,7 +129,7 @@ class TempoVis:
 
 		# Compute FFT
 		fft = np.abs(np.fft.rfft(wav)[:, :self.FFT_size], dtype=wav.dtype)
-		fft = np.log1p(fft)*16
+		# fft = np.log1p(fft)
 		stereo = wav.shape[0]>1
 		tml = TimedLevel((ctypes.c_void_p*2)(fft[0,:].ctypes.data,
 		                                     fft[1,:].ctypes.data if stereo else 0),
