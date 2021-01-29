@@ -27,6 +27,7 @@ class TempoVis:
 	             tempo_buffer_seconds=20,
 	             tempo_buffer_fold=0.25,
 	             tempo_calc_interval=5,
+	             record_latency=0,
 	             n_channels=1,
 	             window_title='Music Tempo Visualizer',
 	             full_screen=False,
@@ -34,27 +35,26 @@ class TempoVis:
 
 		# Create audio stream reader
 		try:
-			assert False  # to debug sounddevice
-			from src.stream_reader_pyaudio import Stream_Reader
+			from src.stream_reader_sounddevice import Stream_Reader
 			self.stream_reader = Stream_Reader(
-				device=device,
-				rate=rate,
-				n_channels=n_channels,
-				buffer_seconds=tempo_buffer_seconds,
-				buffer_fold=tempo_buffer_fold,
-				updates_per_second=updates_per_second,
-				verbose=verbose)
+				device = device,
+				rate = rate,
+				n_channels = n_channels,
+				buffer_seconds = tempo_buffer_seconds,
+				buffer_fold = tempo_buffer_fold,
+				updates_per_second = updates_per_second,
+				verbose = verbose)
 		except:
 			try:
-				from src.stream_reader_sounddevice import Stream_Reader
+				from src.stream_reader_pyaudio import Stream_Reader
 				self.stream_reader = Stream_Reader(
-					device=device,
-					rate=rate,
-					n_channels=n_channels,
-					buffer_seconds=tempo_buffer_seconds,
-					buffer_fold=tempo_buffer_fold,
-					updates_per_second=updates_per_second,
-					verbose=verbose)
+					device = device,
+					rate = rate,
+					n_channels = n_channels,
+					buffer_seconds = tempo_buffer_seconds,
+					buffer_fold = tempo_buffer_fold,
+					updates_per_second = updates_per_second,
+					verbose = verbose)
 			except:
 				raise Exception('device init failed, neither pyaudio nor sounddevice is working')
 
@@ -86,10 +86,13 @@ class TempoVis:
 		self.gm_debug = ctypes.c_byte.in_dll(self.tempoVis, 'gm_debug')
 		self.gm_showFPS = ctypes.c_byte.in_dll(self.tempoVis, 'gm_showFPS')
 		self.gm_fullScreen = ctypes.c_byte.in_dll(self.tempoVis, 'gm_fullScreen')
+		self.RecordLatency = ctypes.c_float.in_dll(self.tempoVis, 'RecordLatency')
 
 		# Set global variables in dynamic library
 		self.gm_debug.value = 1
 		self.gm_showFPS.value = 1
+		self.record_latency = int(record_latency*100+0.5)
+		self.RecordLatency.value = self.record_latency/100.
 		if self.isFullScreen:
 			glutFullScreen()
 			self.gm_fullScreen.value = 1
@@ -116,6 +119,12 @@ class TempoVis:
 			self.gm_debug.value = min(3, self.gm_debug.value+1)
 		elif key == GLUT_KEY_F2:
 			self.gm_debug.value = max(0, self.gm_debug.value-1)
+		elif key in [b'+', b'=']:
+			self.record_latency += 1
+			self.RecordLatency.value = self.record_latency / 100.
+		elif key in [b'-', b'_']:
+			self.record_latency -= 1
+			self.RecordLatency.value = self.record_latency / 100.
 
 	def drawFunc(self):
 		# return self.drawFunc1()

@@ -42,6 +42,7 @@ if __name__ == '__main__':
 	                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument('--fps', '-fps', help='update rate in frames-per-second', type=float, default=100)
 	parser.add_argument('--device', '-d', help='audio device index', type=int, default=None)
+	parser.add_argument('--latency', '-l', help = 'record latency in seconds', type = float, default = 0)
 	parser.add_argument('--num-channels', '-nc', help='number of recording channels', type=int, default=2)
 	parser.add_argument('--list-devices', '-ls', help='list recording devices and quit', action='store_true')
 	parser.add_argument('--sample-rate', '-sr', help='audio recording sampling rate', type=int, default=44100)
@@ -62,6 +63,7 @@ if __name__ == '__main__':
 		tempo_buffer_seconds = tempo_buffer_seconds,
 		tempo_calc_interval = tempo_calc_interval,
 		updates_per_second = fps,  # How often to read the audio stream for new data
+		record_latency = latency,   # latency compensation for tempo spin star
 		full_screen = fullscreen,
 		verbose = verbose  # Print running statistics (latency, fps, ...)
 	)

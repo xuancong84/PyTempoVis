@@ -32,8 +32,8 @@
 #define	TempoBufferLength		8																	// seconds
 #define	TempoMinBufferSize		2																	// seconds
 #define	TempoStableTime			4.0f																// in seconds
-#define	TempoMaxPeriod			8.0f																// in seconds, 10 bpm (exclusive)
-#define	TempoMinPeriod			0.2f																// in seconds, 300 bpm(inclusive)
+#define	TempoMaxPeriod			6.0f																// in seconds, 10 bpm (exclusive)
+#define	TempoMinPeriod			0.5f																// in seconds, 120 bpm(inclusive)
 #define	TempoHalfLife			16																	// seconds (tempo pattern memory)
 #define	PhaseHalfLife			32																	// seconds (phase pattern memory)
 #define	TempoMaxShift			(int)(TempoPrecision*TempoMaxPeriod+0.5)

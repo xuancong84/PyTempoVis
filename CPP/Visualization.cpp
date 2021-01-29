@@ -677,8 +677,8 @@ void	Visualization::phase_change( int phaseInd, int n_added ){
 	}else	tempo_enhance_factor= 1;
 }// phase changed
 
+extern	FLOAT	RecordLatency;
 void	Visualization::DrawAll(TimedLevel *pLevels, int n_added){
-
 	int Width, Height;
 	get_viewport_size(&Width, &Height);
 
@@ -792,10 +792,13 @@ void	Visualization::DrawAll(TimedLevel *pLevels, int n_added){
 	glEnable( GL_DEPTH_TEST );
 	//glDisable( GL_BLEND );
 
+	// Adjust tempoPhase for recorder delay
+	FLOAT l_tempoPhase = tempoPhase+(RecordLatency/tempoPeriod)*M_2PI;
+
 	// Setup star light positions
 	float	mats[3][16];
 	if( tempo_state || gm_debug>=3 ){
-		FLOAT	star_posi[3] = { SPINRADIUS*sin(tempoPhase), -SPINRADIUS*cos(tempoPhase), 0 };
+		FLOAT	star_posi[3] = { SPINRADIUS*sin(l_tempoPhase), -SPINRADIUS*cos(l_tempoPhase), 0 };
 		for( int x=0; x<tempoMeter; x++ ){
 			glPushMatrix();
 			glRotatef( x*360.0f/tempoMeter, 0, 0, 1 );
@@ -810,8 +813,8 @@ void	Visualization::DrawAll(TimedLevel *pLevels, int n_added){
 	BYTE star_brightness = 0;
 	if ( tempo_state || gm_debug>=3 ){
 		star_brightness = (tempoMeter == 3) ? 
-			(BYTE)(pow(cos(tempoPhase*1.5f), 2.0f) * 240 + 15.5f) :
-			(BYTE)(pow(cos(tempoPhase), 4.0f) * 240 + 15.5f);
+			(BYTE)(pow(cos(l_tempoPhase*1.5f), 2.0f) * 240 + 15.5f) :
+			(BYTE)(pow(cos(l_tempoPhase), 4.0f) * 240 + 15.5f);
 	}
 	setupLight(tempoMeter, star_brightness/255.0f);
 	glColorMaterial( GL_FRONT, GL_AMBIENT_AND_DIFFUSE );

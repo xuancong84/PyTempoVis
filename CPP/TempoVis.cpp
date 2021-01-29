@@ -39,6 +39,7 @@ char	*g_error = NULL;
 void	*g_font = GLUT_BITMAP_9_BY_15;
 FLOAT	CameraSpeed = DefaultCameraSpeed;
 FLOAT	SceneRotSpeed = DefaultSceneRotSpeed;
+FLOAT	RecordLatency = 0.0f;	// in seconds
 
 const 	FLOAT BELT_OFF  = (FLOAT)M_PI/BELTCIRCUMSIZE;
 
@@ -118,8 +119,8 @@ extern "C" void DrawFrame( TimedLevel *pLevels ){
 
 	if( gm_debug>=1 ){
 		// Show FPS and debug info
-		glXYPrintf(0,16,(WORD)0,"%c FPS=%.2f DPS=%.2f binSize=%d FFTcutOff=%.1f/%d %s", (char)(gm_fullScreen?'#':'^'),
-			g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, g_pVisual->freq_bin_cutoff, FFTSIZE, g_status);
+		glXYPrintf(0,16,(WORD)0,"%c FPS=%#.4g DPS=%.2f binSize=%d latency=%.2f FFTcutOff=%.1f/%d %s", (char)(gm_fullScreen?'#':'^'),
+			g_pVisual->FPS, g_pVisual->Data_rate, g_pVisual->bins_per_bin, RecordLatency, g_pVisual->freq_bin_cutoff, FFTSIZE, g_status);
 
 		glXYPrintf(0,32,(WORD)0,"0 1 2 3 4 5 6 7 8 :SET_BIN_SIZE");
 
