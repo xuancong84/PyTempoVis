@@ -439,6 +439,7 @@ float* autoCorr1( float *data_out, float *data_in, int max_shift, int Corr_windo
 
 
 FLOAT* autoCorr(float *data_out, float *data_in, int max_shift, int data_size){
+	CheckFloat(data_in, data_size);
 	if (max_shift>data_size){
 		memset(data_out, 0, sizeof(float)*max_shift);
 		max_shift = data_size;
@@ -475,6 +476,7 @@ FLOAT* autoCorr(float *data_out, float *data_in, int max_shift, int data_size){
 
 	// normalize all values into 0 and 1 range
 	normCorr(data_out, max_shift);
+	CheckFloat(data_out, max_shift);
 
 	return	data_out;
 	//CheckFloat( data_out, max_shift );

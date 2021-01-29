@@ -60,6 +60,7 @@ class TempoVis:
 
 		self.rate = int(self.stream_reader.rate)
 		self.verbose = verbose
+		self.last_tick = None
 
 		# Control parameters
 		self.isFullScreen = full_screen
@@ -113,21 +114,37 @@ class TempoVis:
 				self.tempoVis.onMouseButton(2, x, y)
 
 	def keyFunc(self, key, x, y):
-		if key == b'\x1b':
+		if key in [b'q', b'\x1b']:
 			glutLeaveMainLoop()
 		elif key == GLUT_KEY_F1:
 			self.gm_debug.value = min(3, self.gm_debug.value+1)
 		elif key == GLUT_KEY_F2:
 			self.gm_debug.value = max(0, self.gm_debug.value-1)
-		elif key in [b'+', b'=']:
+		elif key == b'f':
+			self.tempoVis.toggleFullScreen()
+		elif key == b'+':
+			self.record_latency += 10
+		elif key ==	b'=':
 			self.record_latency += 1
-			self.RecordLatency.value = self.record_latency / 100.
-		elif key in [b'-', b'_']:
+		elif key == b'_':
+			self.record_latency -= 10
+		elif key == b'-':
 			self.record_latency -= 1
-			self.RecordLatency.value = self.record_latency / 100.
+		self.RecordLatency.value = self.record_latency / 100.
 
 	def drawFunc(self):
 		# return self.drawFunc1()
+		# limit FPS = 60
+		# if self.last_tick is None:
+		# 	self.last_tick = time.time()
+		# else:
+		# 	curr_tick = time.time()
+		# 	delta_time = 1/60. - (curr_tick-self.last_tick)
+		# 	if delta_time > 0:
+		# 		time.sleep(delta_time)
+		# 		self.last_tick = time.time()
+		# 	else:
+		# 		self.last_tick = curr_tick
 
 		length = self.FFT_size*2+1
 		wav, tms = self.stream_reader.get(length=length), self.stream_reader.wav_time
@@ -156,11 +173,11 @@ class TempoVis:
 		elif tms-self.last_tempo_calc_time >= self.tempo_calc_interval:
 			self.last_tempo_calc_time = tms
 			wav = self.stream_reader.get()
-			if False:
+			if False:   # DEBUG: listen to what has been recorded
 				import pyaudio
 				p = pyaudio.PyAudio()
 				stream = p.open(format = pyaudio.paFloat32, channels = 2, rate = self.rate, output = True)
-				stream.write(wav.tobytes())
+				stream.write(wav.T.tobytes())
 			if wav.shape[0]>1: wav = wav.mean(axis=0, keepdims=True)
 			print('compute tempo: length=%s sec'%(wav.shape[1]/self.stream_reader.rate))
 			self.tempoVis.CreateTempoThread(ctypes.c_void_p(wav[0,:].ctypes.data),

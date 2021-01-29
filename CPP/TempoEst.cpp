@@ -51,8 +51,7 @@ void deltaSpec( float *spec, float *out, int size ){
 		for( int y=1; y<=delta_width; y++ ){
 			num += (spec[x+y]-spec[x-y])*y;
 		}
-		out[x] = num*delta_mul;
-		if(out[x]<0) out[x] = 0;
+		out[x] = max(0.0f, num*delta_mul);
 	}
 }
 
@@ -253,8 +252,10 @@ int checkTempoPeak(FLOAT *data, int size, int peak){
 }
 int findBestTempoPeak(FLOAT *data, int size){
 	int	posi = 0;
+	int first = (int)round(TempoMinPeriod*TempoPrecision);
+	int last = (int)round(TempoMaxPeriod*TempoPrecision);
 	FLOAT minV = -FLT_MAX;
-	for (int x = size/100, X = size*99/100; x<X; x++){
+	for (int x = first; x<=last; ++x){
 		if (data[x]){
 			FLOAT data_val = checkTempoPeak(data, size, x)*data[x];
 			if (data_val > minV){
@@ -267,9 +268,10 @@ int findBestTempoPeak(FLOAT *data, int size){
 }// Obtain maximum point from 1/10 to 9/10, due to correlation spectrum edge effect
 
 float ComputeTempo( float *data, int size, int sr, float &pri_tempo ){  //sr: sampling rate
-	const int       winpts = (int)(window_size*sr+0.5);
+	int	winpts = (int)(window_size*sr+0.5);
+	winpts = (int)pow(2.0,ceil(log((double)winpts)/log(2.0)));
+
 	const int       hoppts = (int)(hop_size*sr+0.5);
-	const int       fftpts = (int)pow(2.0,ceil(log((double)winpts)/log(2.0)));
 	const int       nframe = (int)((double)(size-winpts)/hoppts+1.0);
 
 	vector <vector <FLOAT>> TempoCorr;
@@ -279,7 +281,7 @@ float ComputeTempo( float *data, int size, int sr, float &pri_tempo ){  //sr: sa
 									Tempo3WindowFunc(TempoMaxShift);
 
 	// Initialize filterbank
-	FBankInfo fb_info = InitFBank( fftpts, (long)(1e7f/sr+0.5), nFilterBanks, 0.0f, 8000.0f, false, false );
+	FBankInfo fb_info = InitFBank( winpts, (long)(1e7f/sr+0.5), nFilterBanks, 0.0f, 8000.0f, false, false );
 
 	// Initialize window functions
 	{
@@ -302,19 +304,22 @@ float ComputeTempo( float *data, int size, int sr, float &pri_tempo ){  //sr: sa
 	float   fbank[nFilterBanks+1];
 	vector <vector<FLOAT>> AllBuf(nFilterBanks+1, vector<FLOAT>(nframe));
 	vector <FLOAT> DifBuf(nframe);
-	vector <FLOAT> fdata(fftpts);
+	vector <FLOAT> fdata(winpts+1);
+	*(int*)&fdata[0] = winpts;
 
 	// Extract all frames
 	zero_mean(data, size);
 	vector <vector <FLOAT>> fbs(nframe);
 	*(int*)fbank = nFilterBanks;
 	for( int x=0; x<nframe; x++ ){
-			memcpy( fdata.data(), &data[x*hoppts], winpts*sizeof(float) );
+			memcpy( &fdata[1], &data[x*hoppts], winpts*sizeof(FLOAT) );
 
 			// get filterbank and energy
 			Wave2FBank( fdata.data(), fbank, &AllBuf[0][x], fb_info );
+			CheckFloat(&AllBuf[0][x]);
 			for( int y=1; y<=nFilterBanks; y++ )
 					AllBuf[y][x] = fbank[y];
+			CheckFloat(&fbank[1], nFilterBanks);
 	}
 
 	{// extract filter bank and normalize energy w.r.t. filter bank
@@ -401,3 +406,4 @@ float ComputeTempo( float *data, int size, int sr, float &pri_tempo ){  //sr: sa
 	if (getInnerMeter(tempo, TempoSpec.data(), TempoMaxShift) == 3) if (!bAmbi) tempo = -tempo;
 	return  (float)hop_size*tempo;
 }
+

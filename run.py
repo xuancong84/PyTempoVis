@@ -43,7 +43,7 @@ if __name__ == '__main__':
 	parser.add_argument('--fps', '-fps', help='update rate in frames-per-second', type=float, default=100)
 	parser.add_argument('--device', '-d', help='audio device index', type=int, default=None)
 	parser.add_argument('--latency', '-l', help = 'record latency in seconds', type = float, default = 0)
-	parser.add_argument('--num-channels', '-nc', help='number of recording channels', type=int, default=2)
+	parser.add_argument('--num-channels', '-nc', help='number of recording channels', type=int, default=1)
 	parser.add_argument('--list-devices', '-ls', help='list recording devices and quit', action='store_true')
 	parser.add_argument('--sample-rate', '-sr', help='audio recording sampling rate', type=int, default=44100)
 	parser.add_argument('--tempo-buffer-seconds', '-tbs', help='compute tempo from last N seconds audio', type=int, default=12)

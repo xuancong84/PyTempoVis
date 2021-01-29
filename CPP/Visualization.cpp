@@ -853,7 +853,8 @@ void	Visualization::DrawAll(TimedLevel *pLevels, int n_added){
 		glPushMatrix();
 		for( int x=0; x<tempoMeter; x++ ){
 			glLoadMatrixf(mats[x]);
-			glScalef( star_scale, star_scale, star_scale );
+//			glScalef( star_scale, star_scale, star_scale );
+			glScalef( 1, 1, 1 );
 			glDrawArrays( GL_TRIANGLES, 0, 72 );
 		}
 		glPopMatrix();
@@ -969,16 +970,21 @@ void	Visualization::setupLight( int n_light, float brightness ){
 	Vector4Mul( l_specular, brightness / n_light, _specular);
 
 	// Set light properties
-	for( int x=0; x<n_light; x++ ){
-		GLenum	LIGHT = GL_LIGHT0+x;
-		glLightfv(LIGHT,GL_AMBIENT,	_ambient);
-		glLightfv(LIGHT,GL_DIFFUSE,	_diffuse);
-		glLightfv(LIGHT,GL_SPECULAR,_specular);
-		glLightf(LIGHT, GL_CONSTANT_ATTENUATION, attn_const_0);
-		glLightf(LIGHT, GL_LINEAR_ATTENUATION, attn_const_1);
-		glLightf(LIGHT, GL_QUADRATIC_ATTENUATION, attn_const_2);
-		glLightf(LIGHT, GL_SPOT_CUTOFF, 180.0f);
-		glEnable( LIGHT );
+	{
+		int x=0;
+		for( ; x<n_light; x++ ){
+			GLenum	LIGHT = GL_LIGHT0+x;
+			glLightfv(LIGHT,GL_AMBIENT,	_ambient);
+			glLightfv(LIGHT,GL_DIFFUSE,	_diffuse);
+			glLightfv(LIGHT,GL_SPECULAR,_specular);
+			glLightf(LIGHT, GL_CONSTANT_ATTENUATION, attn_const_0);
+			glLightf(LIGHT, GL_LINEAR_ATTENUATION, attn_const_1);
+			glLightf(LIGHT, GL_QUADRATIC_ATTENUATION, attn_const_2);
+			glLightf(LIGHT, GL_SPOT_CUTOFF, 180.0f);
+			glEnable( LIGHT );
+		}
+		for(; x<8; ++x)
+			glDisable( GL_LIGHT0+x );
 	}
 
 	// Material properties

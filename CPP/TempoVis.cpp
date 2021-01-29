@@ -59,8 +59,9 @@ FLOAT	m_specular[4]	= {1.0f,1.0f,1.0f,1.0f};
 FLOAT	m_emissive[4]	= {0.01f,0.01f,0.01f,1.0f};
 
 bool	CheckFloat( float *f, int N ){
+	return true;
 	for( int x=0; x<N; x++ )
-		if( f[x]>=FLT_MAX || f[x]<=-FLT_MAX || f[x]!=f[x] ){
+		if(!(f[x]>-1000000 && f[x]<1000000)){
 			asm(".intel_syntax noprefix\n"
 				"int 3");
 			return false;
@@ -181,37 +182,40 @@ void glGetScreenSize(int &width, int &height){
 	height = glutGet(GLUT_SCREEN_HEIGHT);
 }
 
+extern "C" void toggleFullScreen(){
+	static int last_win_x=20, last_win_y=20, last_win_width=640, last_win_height=480;
+	int win_x, win_y, win_width, win_height;
+	int scr_width, scr_height;
+	glGetWindowRect(win_x, win_y, win_width, win_height);
+	glGetScreenSize(scr_width, scr_height);
+	if (!win_x && !win_y && win_width==scr_width && win_height==scr_height){	// if already fullscreen
+		glutReshapeWindow(last_win_width, last_win_height);
+		glutPositionWindow(last_win_x, last_win_y);
+		glutPostRedisplay();
+		gm_fullScreen = false;
+	} else {				// if not fullscreen go fullscreen
+		glutFullScreen();
+		last_win_x = win_x;
+		last_win_y = win_y;
+		last_win_width = win_width;
+		last_win_height = win_height;
+		gm_fullScreen = true;
+	}
+}
+
 extern "C" void onMouseButton(int32_t event, int32_t x, int32_t y){
 	if (!g_pVisual)
 		return;
 	static int last_x, last_y, last_mid_x, last_mid_y;
-	static int last_win_x=20, last_win_y=20, last_win_width=640, last_win_height=480;
 	switch (event){
 	case 0: // WM_LBUTTONUP
 		if (last_x == x && last_y == y){
 			bool bToggle = true;
 			if (gm_showFPS || gm_debug ){
 				WORD	Xpos = x, Ypos = y;
-				if (Xpos < 9 && Ypos < 15){
-					int win_x, win_y, win_width, win_height;
-					int scr_width, scr_height;
-					glGetWindowRect(win_x, win_y, win_width, win_height);
-					glGetScreenSize(scr_width, scr_height);
-					if (!win_x && !win_y && win_width==scr_width && win_height==scr_height){	// if already fullscreen
-						glutReshapeWindow(last_win_width, last_win_height);
-						glutPositionWindow(last_win_x, last_win_y);
-						glutPostRedisplay();
-						gm_fullScreen = false;
-					} else {				// if not fullscreen go fullscreen
-						glutFullScreen();
-						last_win_x = win_x;
-						last_win_y = win_y;
-						last_win_width = win_width;
-						last_win_height = win_height;
-						gm_fullScreen = true;
-					}
-				}
-				else if (Ypos <= 32 && Ypos >= 15){
+				if (Xpos < 9 && Ypos < 15)
+					toggleFullScreen();
+				else if (Ypos <= 30 && Ypos >= 15){
 					int cx = glutBitmapLength(g_font, (const BYTE*)"0 1 2 3 4 5 6 7 8 ");
 					int	bin_size = (int)(Xpos*9.0 / cx + 0.5);
 					if (!bin_size){
@@ -262,7 +266,7 @@ void TempoThreadFunc( FLOAT *fdata, int fsize, int sr ){
 	g_status = all_status[3];
 	if(g_pVisual){
 		g_pVisual->preset_tempo = abs(tempo);
-		g_pVisual->preset_meter = tempo>0?2:3;
+		g_pVisual->preset_meter = tempo>=0?2:3;
 	}
 }
 
